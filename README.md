@@ -1,2 +1,1 @@
-# rus
-Rus Launcher
+# Rus Launcher
