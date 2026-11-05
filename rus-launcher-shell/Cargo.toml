@@ -7,6 +7,13 @@ publish = false
 
 [dependencies]
 include_dir = "0.7"
+tao = { version = "0.37", optional = true }
+wry = { version = "0.57.1", optional = true }
+
+[features]
+default = ["native"]
+native = ["wry", "tao"]
+tao = ["dep:tao"]
 
 [[bin]]
 name = "rus-launcher-shell"

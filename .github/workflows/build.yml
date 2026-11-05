@@ -68,18 +68,27 @@ jobs:
         working-directory: gate-install
         run: cargo build --release
 
+      - name: System libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+
       - name: Build the launcher
         run: |
           mkdir -p rus-launcher-shell/assets/launcher
           cp -r launcher/index.html launcher/icons launcher/posters launcher/tabs launcher/fonts launcher/brand rus-launcher-shell/assets/launcher/
           cd rus-launcher-shell
           cargo build --release
+          cp target/release/rus-launcher-shell target/release/rus-launcher-shell-native
+          cargo build --release --no-default-features
+          cp target/release/rus-launcher-shell target/release/rus-launcher-shell-browser
 
       - name: AppImage
         run: |
           set -e
           mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/256x256/apps
-          cp rus-launcher-shell/target/release/rus-launcher-shell AppDir/usr/bin/
+          cp rus-launcher-shell/target/release/rus-launcher-shell-native AppDir/usr/bin/rus-launcher-shell
+          cp rus-launcher-shell/target/release/rus-launcher-shell-browser AppDir/usr/bin/rus-launcher-shell-browser
           cp launcher/brand/mark.png AppDir/usr/share/icons/hicolor/256x256/apps/rus-launcher.png
           cp launcher/brand/mark.png AppDir/rus-launcher.png
           cat > AppDir/rus-launcher.desktop <<'EOF'
@@ -94,7 +103,14 @@ jobs:
           EOF
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
-          exec "$APPDIR/usr/bin/rus-launcher-shell" "$@"
+          SELF=$(dirname "$(readlink -f "$0")")
+          APPDIR="${APPDIR:-$SELF}"
+          # the window build needs webkit2gtk; without it, open in the browser
+          if ldconfig -p 2>/dev/null | grep -q libwebkit2gtk-4.1; then
+            exec "$APPDIR/usr/bin/rus-launcher-shell" "$@"
+          else
+            exec "$APPDIR/usr/bin/rus-launcher-shell-browser" "$@"
+          fi
           EOF
           chmod +x AppDir/AppRun
           curl -fsSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage

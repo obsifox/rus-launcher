@@ -59,16 +59,20 @@ fn serve(listener: TcpListener) {
         }
         let path = clean(&line);
 
-        while let Ok(size) = reader.read_line(&mut String::new()) {
+        let mut blank = String::new();
+        while let Ok(size) = reader.read_line(&mut blank) {
             if size == 0 || size <= 2 {
                 break;
             }
+            blank.clear();
         }
 
         match LAUNCHER.get_file(&path) {
             Some(file) => send(&mut stream, "200 OK", file.contents(), mime(&path)),
             None => match LAUNCHER.get_file("index.html") {
-                Some(file) => send(&mut stream, "200 OK", file.contents(), "text/html; charset=utf-8"),
+                Some(file) => {
+                    send(&mut stream, "200 OK", file.contents(), "text/html; charset=utf-8")
+                }
                 None => send(&mut stream, "404 Not Found", b"not found", "text/plain"),
             },
         }
@@ -100,20 +104,72 @@ fn open(url: &str) {
                 return;
             }
         }
-        println!("Open {}", url);
+        println!("Rus Launcher is running at {}", url);
     }
+}
+
+/// Opens the interface in a window of its own. Stays here until the window is closed.
+#[cfg(feature = "native")]
+fn run_window(url: &str) -> Result<(), String> {
+    use tao::{
+        event::{Event, WindowEvent},
+        event_loop::{ControlFlow, EventLoop},
+        window::WindowBuilder,
+    };
+    use wry::WebViewBuilder;
+
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_title("Rus Launcher")
+        .with_inner_size(tao::dpi::LogicalSize::new(1360.0, 860.0))
+        .with_min_inner_size(tao::dpi::LogicalSize::new(1100.0, 680.0))
+        .build(&event_loop)
+        .map_err(|e| e.to_string())?;
+
+    let builder = WebViewBuilder::new().with_url(url);
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "android"))]
+    let _webview = builder.build(&window).map_err(|e| e.to_string())?;
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "android")))]
+    let _webview = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        let vbox = window.default_vbox().ok_or("no webview container")?;
+        builder.build_gtk(vbox).map_err(|e| e.to_string())?
+    };
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        if let Event::WindowEvent {
+            event: WindowEvent::CloseRequested,
+            ..
+        } = event
+        {
+            *control_flow = ControlFlow::Exit;
+        }
+    });
 }
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind a free port");
     let port = listener.local_addr().expect("port").port();
     let url = format!("http://127.0.0.1:{}/", port);
+    println!("Rus Launcher on {}", url);
 
     thread::spawn(move || serve(listener));
-    println!("Rus Launcher on {}", url);
+
+    #[cfg(feature = "native")]
+    {
+        if let Err(reason) = run_window(&url) {
+            println!("No window: {}. Opening the browser instead.", reason);
+            open(&url);
+        }
+    }
+    #[cfg(not(feature = "native"))]
     open(&url);
 
-    // stay up while the window is open
+    // keep the server up while the window, or the browser tab, is open
     loop {
         thread::sleep(Duration::from_secs(3600));
     }
