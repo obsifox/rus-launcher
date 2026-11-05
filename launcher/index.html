@@ -239,6 +239,83 @@
       height: 32px; min-width: 220px; border-radius: 2px; background: #1b1b1f;
       display: flex; align-items: center; padding: 0 12px; color: #b7b8be; font-size: 13px;
     }
+    .rail .pins { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 14px; }
+    .rail .pin { position: relative; width: 48px; height: 48px; border: 0; padding: 0; border-radius: 10px; overflow: hidden; background: #1b1b1f; }
+    .rail .pin img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .rail .pin .fb { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 600 15px/1 Inter, sans-serif; color: #e8e9ee; }
+    .rail .pin.active { box-shadow: 0 0 0 2px #e23b45; }
+    .rail .pin:hover { box-shadow: 0 0 0 2px #4a4a55; }
+    .rail .pin.active:hover { box-shadow: 0 0 0 2px #e23b45; }
+    .rail .pin-limit { color: #5c5d66; font: 500 9px/1 Inter, sans-serif; letter-spacing: 0.06em; }
+
+    .topbar { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; }
+    .topbar .grow { flex: 1; }
+    .pill {
+      height: 34px; padding: 0 16px; border: 0; border-radius: 2px;
+      background: #e23b45; color: #fff; font: 600 13px/1 Inter, sans-serif; letter-spacing: 0.04em;
+    }
+    .pill:hover { background: #ff4d57; }
+    .search { display: flex; gap: 8px; margin: 12px 0 4px; }
+    .search input {
+      height: 36px; width: 100%; max-width: 320px; border: 1px solid #2c2c32; border-radius: 2px;
+      background: #1b1b1f; padding: 0 12px; font-size: 13px; outline: none; color: #f4f5f7;
+    }
+    .flash { margin: 10px 0 0; color: #ffb4b8; font-size: 13px; }
+    .icards { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 12px; margin-top: 6px; }
+    .icard {
+      border: 1px solid #2c2c32; border-radius: 4px; overflow: hidden; background: #1b1b1f;
+      text-align: left; color: #f4f5f7; display: flex; flex-direction: column;
+    }
+    .icard .cover { height: 116px; width: 100%; object-fit: cover; object-position: center 40%; display: block; background: #111; }
+    .icard .pad { padding: 10px 12px 12px; }
+    .icard h3 { margin: 0; font: 600 14px/1.2 Inter, sans-serif; }
+    .icard .meta { margin-top: 5px; color: #9b9ca3; font-size: 12px; }
+    .icard .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .mb {
+      height: 26px; padding: 0 8px; border: 1px solid #34343c; border-radius: 2px;
+      background: transparent; color: #d7d8de; font: 600 10px/1 Inter, sans-serif; letter-spacing: 0.08em;
+    }
+    .mb:hover { border-color: #e23b45; color: #fff; }
+    .mb.on { background: #e23b45; border-color: #e23b45; color: #fff; }
+
+    .mask { position: fixed; inset: 0; z-index: 40; background: rgba(5,5,7,.74); display: flex; align-items: center; justify-content: center; }
+    .modal { width: 780px; max-width: 94vw; max-height: 88vh; display: flex; flex-direction: column; background: #141416; border: 1px solid #2a2a30; border-radius: 4px; }
+    .modal > header { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #23232a; }
+    .modal > header h2 { margin: 0; font: 600 17px/1 Inter, sans-serif; }
+    .modal .x { margin-left: auto; width: 28px; height: 28px; border: 0; background: transparent; color: #9b9ca3; font-size: 15px; }
+    .modal .x:hover { background: #2a2a30; color: #fff; }
+    .modal .mbody { padding: 16px 20px 20px; overflow: auto; }
+    .modal > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid #23232a; }
+    .btn { height: 34px; padding: 0 14px; border: 0; border-radius: 2px; background: #2a2a30; color: #fff; font: 600 12px/1 Inter, sans-serif; letter-spacing: 0.06em; }
+    .btn:hover { background: #34343c; }
+    .btn.primary { background: #e23b45; }
+    .btn.primary:hover { background: #ff4d57; }
+    .btn.ghost { background: transparent; border: 1px solid #34343c; color: #c5c6cc; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 4px; }
+    .field > span { color: #9b9ca3; font: 600 11px/1 Inter, sans-serif; letter-spacing: 0.14em; }
+    .field input {
+      height: 36px; border: 1px solid #2c2c32; border-radius: 2px; background: #1b1b1f;
+      padding: 0 12px; font-size: 13px; outline: none; color: #f4f5f7;
+    }
+    .picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
+    .picker button { padding: 0; border: 1px solid #2c2c32; border-radius: 3px; overflow: hidden; background: #111; }
+    .picker img { width: 100%; height: 62px; object-fit: cover; object-position: center 40%; display: block; }
+    .picker button.on { border-color: #e23b45; box-shadow: inset 0 0 0 1px #e23b45; }
+    .srv { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 12px; background: #1b1b1f; border-radius: 4px; font-size: 13px; }
+    .srv .addr { color: #9b9ca3; }
+    .srv .mb { margin-left: auto; }
+
+    .browse { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 0; }
+    .browse input {
+      height: 36px; width: 260px; border: 1px solid #2c2c32; border-radius: 2px;
+      background: #1b1b1f; padding: 0 12px; font-size: 13px; outline: none; color: #f4f5f7;
+    }
+    .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 10px; margin-top: 14px; }
+    .hit { display: flex; gap: 10px; padding: 10px; background: #1b1b1f; border-radius: 4px; }
+    .hit img { width: 46px; height: 46px; border-radius: 4px; object-fit: cover; background: #111; flex: none; }
+    .hit h4 { margin: 0; font: 600 13px/1.2 Inter, sans-serif; }
+    .hit p { margin: 4px 0 0; color: #9b9ca3; font-size: 12px; }
+    .hit .mb { margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -252,6 +329,7 @@
     <div class="body">
       <aside class="rail">
         <img class="brand" src="brand/mark.png" alt="Rus">
+        <div class="pins" id="pins"></div>
         <button class="tab active" type="button" data-view="home" title="Home">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 9.2 10 3l7 6.2V17a1 1 0 0 1-1 1h-4.2v-5.2H8.2V18H4a1 1 0 0 1-1-1V9.2Z" stroke="currentColor" stroke-width="1.4"/></svg>
           Home
@@ -285,6 +363,19 @@
           </div></div>
           <div class="row"><span>Game directory</span><div class="path">~/Games/Rus</div></div>
           <div class="row"><span>Language</span><div class="path">English</div></div>
+          <div class="row"><span>Skin source</span><div class="mem" id="skin">
+            <button type="button" class="on" data-skin="local">Local</button>
+            <button type="button" data-skin="microsoft">Microsoft</button>
+            <button type="button" data-skin="tlauncher">TLauncher</button>
+          </div></div>
+          <div class="row"><span>Account</span><div style="display:flex; gap:8px; align-items:center;">
+            <span class="path" id="skinAccount">Local skin file</span>
+            <button class="mb" id="skinConnect" type="button">CONNECT</button>
+          </div></div>
+          <div class="row"><span>CurseForge API key</span><div style="display:flex; gap:8px; align-items:center;">
+            <span class="path" id="cfKey">Not set</span>
+            <button class="mb" id="cfSet" type="button">SET KEY</button>
+          </div></div>
           <div class="row"><span>Close launcher when the game starts</span><button class="toggle on" id="closeOnPlay" type="button">On</button></div>
         </section>
       </main>
@@ -305,11 +396,11 @@
       ["1.20.5", "Wolf Armor", "1.20.5_wolf_armor.png", false, "A 1.20 release."],
       ["1.20.3", "Decorated Pot", "1.20.3_decorated_pot.png", false, "A 1.20 release."],
       ["1.20", "Cherry Grove", "1.20_cherry_grove.png", false, "A 1.20 release."],
-      ["1.19", "Warden", "1.19_warden.png", false, "A 1.19 release."],
-      ["1.18", "Lush Caves", "1.18_lush_caves.png", false, "A 1.18 release."],
-      ["1.17", "Axolotl", "1.17_axolotl.png", false, "A 1.17 release."],
-      ["1.16", "Netherite", "1.16_netherite.png", false, "A 1.16 release."],
-      ["1.15", "Bee", "1.15_bee.png", false, "A 1.15 release."],
+      ["1.19", "Warden", "1.19_warden.png", false, "An older release."],
+      ["1.18", "Lush Caves", "1.18_lush_caves.png", false, "An older release."],
+      ["1.17", "Axolotl", "1.17_axolotl.png", false, "An older release."],
+      ["1.16", "Netherite", "1.16_netherite.png", false, "An older release."],
+      ["1.15", "Bee", "1.15_bee.png", false, "An older release."],
       ["1.14", "Fox", "1.14_fox.png", true, "Installed for the Legacy instance."],
       ["1.13", "Dolphin", "1.13_dolphin.png", false, "An older release."],
       ["1.12", "Concrete", "1.12_concrete.png", false, "An older release."],
@@ -318,6 +409,7 @@
       ["1.9", "Elytra", "1.9_elytra.png", false, "An older release."],
       ["1.8", "Slime Block", "1.8_slime_block.png", false, "The oldest release in the list."]
     ].map(([version, name, file, installed, blurb]) => ({ version, name, file, installed, blurb }));
+
     const LOADERS = ["Vanilla", "Fabric", "Forge", "NeoForge", "Quilt"];
     const TABS = {
       Vanilla: "tabs/vanilla.png",
@@ -326,9 +418,13 @@
       NeoForge: "tabs/neoforge.png",
       Quilt: "tabs/quilt.png"
     };
-    function tabArt(name) {
-      return TABS[name] || `tabs/${name.toLowerCase()}.png`;
-    }
+    const TYPES = [
+      ["mod", "Mods"], ["resourcepack", "Resource Packs"],
+      ["shader", "Shaders"], ["modpack", "Modpacks"]
+    ];
+    const CF_CLASS = { mod: 6, resourcepack: 12, shader: 6, modpack: 4471 };
+
+    function tabArt(name) { return TABS[name] || `tabs/${name.toLowerCase()}.png`; }
     function tabPlate(btn, name) {
       if (btn.dataset.fallback) return;
       btn.dataset.fallback = "1";
@@ -342,16 +438,33 @@
     const poster = (file) => "posters/" + file.replace(".png", ".jpg");
 
     const instances = {
-      Survival: { version: "26.3", loader: "Fabric", source: "new", mods: [] },
-      Creative: { version: "1.21.11", loader: "Vanilla", source: "new", mods: [] },
-      Legacy: { version: "1.14", loader: "Forge", source: "import", mods: [] }
+      Survival: { version: "26.3", loader: "Fabric", source: "new", image: null, mods: [], servers: [{ name: "Hypixel", address: "mc.hypixel.net" }] },
+      Creative: { version: "1.21.11", loader: "Vanilla", source: "new", image: null, mods: [], servers: [] },
+      Legacy: { version: "1.14", loader: "Forge", source: "import", image: null, mods: [], servers: [{ name: "Legacy Realm", address: "play.legacy.net" }] }
     };
     let current = "Survival";
     let view = "home";
+    let query = "";
+    let pins = ["Survival"];
+    const PIN_MAX = 5;
+    let flash = "";
     let pane = "advance";
     let family = "1.21";
+    let draft = null;
+    let skin = { source: "local", account: null };
+    let cfKey = "";
+    let browse = { source: "modrinth", type: "mod", query: "" };
 
     function inst() { return instances[current]; }
+
+    /* ---------- shell ---------- */
+
+    function render() {
+      renderRail();
+      if (view === "home") renderHome();
+      if (view === "instance") renderInstance();
+      if (view === "mods") renderMods();
+    }
 
     function show(name) {
       view = name;
@@ -359,10 +472,56 @@
         document.getElementById(id).classList.toggle("hidden", id !== name);
       }
       document.querySelectorAll(".rail .tab").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
-      if (name === "home") renderHome();
-      if (name === "instance") renderInstance();
-      if (name === "mods") renderMods();
+      render();
     }
+
+    function renderRail() {
+      const box = document.getElementById("pins");
+      box.innerHTML = pins.map((name) => {
+        const it = instances[name];
+        if (!it) return "";
+        const v = byVersion[it.version];
+        const art = it.image || poster(v.file);
+        return `<button class="pin${name === current && view === "instance" ? " active" : ""}" type="button" data-pin="${name}" title="${name}">
+          <img src="${art}" alt="${name}" onerror="this.remove()">
+          <span class="fb">${name.slice(0, 1).toUpperCase()}</span>
+        </button>`;
+      }).join("") + (pins.length ? `<span class="pin-limit">${pins.length}/${PIN_MAX}</span>` : "");
+    }
+
+    /* ---------- modal helper ---------- */
+
+    let modalEl = null;
+    function openModal(opts) {
+      closeModal();
+      const mask = document.createElement("div");
+      mask.className = "mask";
+      mask.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+        <header><h2>${opts.title}</h2><button class="x" type="button" aria-label="Close">&#10005;</button></header>
+        <div class="mbody">${opts.body || ""}</div>
+        ${opts.actions ? "<footer></footer>" : ""}
+      </div>`;
+      document.body.append(mask);
+      modalEl = mask;
+      mask.querySelector(".x").addEventListener("click", closeModal);
+      mask.addEventListener("click", (e) => { if (e.target === mask) closeModal(); });
+      if (opts.actions) {
+        const footer = mask.querySelector("footer");
+        for (const a of opts.actions) {
+          const b = document.createElement("button");
+          b.className = "btn " + (a.primary ? "primary" : "ghost");
+          b.type = "button";
+          b.textContent = a.label;
+          b.addEventListener("click", a.onClick);
+          footer.append(b);
+        }
+      }
+      return mask;
+    }
+    function closeModal() { if (modalEl) { modalEl.remove(); modalEl = null; draft = null; } }
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+    /* ---------- home ---------- */
 
     function renderHome() {
       const v = byVersion[inst().version];
@@ -408,12 +567,13 @@
       document.querySelector("#home .game").addEventListener("click", () => show("instance"));
     }
 
+    /* ---------- versions ---------- */
+
     function familyOf(version) {
       if (version.startsWith("26.")) return "26";
       const parts = version.split(".");
       return parts.length >= 2 ? parts[0] + "." + parts[1] : version;
     }
-
     function familyGroups() {
       const map = new Map();
       for (const item of VERSIONS) {
@@ -423,204 +583,510 @@
       }
       return [...map.entries()].map(([key, items]) => ({ key, items, face: items[0] }));
     }
-
-    function vcard(item, title, loader, active) {
-      return `
-        <button class="vcard${active ? " active" : ""}" type="button" ${item ? `data-version="${item.version}"` : ""}>
-          <img class="art" src="${poster(item.file)}" alt="">
-          <span class="scrim"></span>
-          <span class="head">
-            <img src="icons/${item.file}" alt="">
-            <b>${title}</b>
-            <i>${loader}</i>
-          </span>
-        </button>`;
+    function familyLabel(g) {
+      return g.items.length > 1 ? g.key + ".x" : g.items[0].version;
     }
 
-    function renderInstalled(data) {
-      const installed = VERSIONS.filter((item) => item.installed);
-      if (!installed.length) return `<p class="empty">Nothing installed on this loader.</p>`;
-      return `<div class="cards" id="installedGrid">
-        ${installed.map((item) => vcard(item, item.version, data.loader, item.version === inst().version)).join("")}
+    function pickRows(items, selected) {
+      return `<div class="picks" id="picks">${items.map((item) => `
+        <div class="pick" data-pick="${item.version}">
+          <img src="icons/${item.file}" alt="">
+          <b>${item.version}</b>
+          <span>${item.name}</span>
+          <button class="install${item.installed ? " done" : ""}" type="button" data-install="${item.version}">${item.installed ? "INSTALLED" : "INSTALL"}</button>
+        </div>`).join("")}</div>`;
+    }
+
+    function loaderStrip(loader) {
+      return LOADERS.map((name) => `<button type="button" class="${name === loader ? "active" : ""}" data-loader="${name}" title="${name}" aria-label="${name}"><img src="${tabArt(name)}" alt="${name}" onerror="tabPlate(this.closest('[data-loader]'), '${name}')"></button>`).join("");
+    }
+
+    /* ---------- instance page ---------- */
+
+    function cardHTML(name) {
+      const it = instances[name];
+      const v = byVersion[it.version];
+      const img = it.image || poster(v.file);
+      const pinned = pins.includes(name);
+      return `<div class="icard">
+        <img class="cover" src="${img}" alt="">
+        <div class="pad">
+          <h3>${name}</h3>
+          <div class="meta">${it.version} · ${it.loader}${it.source === "import" ? " · imported" : ""}</div>
+          <div class="row">
+            <button class="mb${name === current ? " on" : ""}" type="button" data-act="open" data-name="${name}">OPEN</button>
+            <button class="mb" type="button" data-act="rename" data-name="${name}">RENAME</button>
+            <button class="mb" type="button" data-act="image" data-name="${name}">IMAGE</button>
+            <button class="mb" type="button" data-act="duplicate" data-name="${name}">DUPLICATE</button>
+            <button class="mb" type="button" data-act="servers" data-name="${name}">SERVERS</button>
+            <button class="mb${pinned ? " on" : ""}" type="button" data-act="pin" data-name="${name}">${pinned ? "PINNED" : "PIN"}</button>
+          </div>
+        </div>
       </div>`;
     }
 
-    function renderAdvance(data) {
-      const groups = familyGroups();
-      const open = groups.find((g) => g.key === family) || groups[0];
-      return `
-        <div class="cards" id="familyGrid">
-          ${groups.map((g) => `
-            <button class="vcard${g.key === open.key ? " active" : ""}" type="button" data-family="${g.key}">
-              <img class="art" src="${poster(g.face.file)}" alt="">
-              <span class="scrim"></span>
-              <span class="head">
-                <img src="icons/${g.face.file}" alt="">
-                <b>${g.key}.x</b>
-                <i>${data.loader}</i>
-              </span>
-            </button>`).join("")}
-        </div>
-        <div class="label">${open.key} RELEASES</div>
-        <div class="picks" id="picks">
-          ${open.items.map((item) => `
-            <div class="pick">
-              <img src="icons/${item.file}" alt="">
-              <b>${item.version}</b>
-              <span>${item.name}</span>
-              <button class="install${item.installed ? " done" : ""}" type="button" data-install="${item.version}">${item.installed ? "INSTALLED" : "INSTALL"}</button>
-            </div>`).join("")}
-        </div>`;
-    }
-
     function renderInstance() {
+      const names = Object.keys(instances).filter((n) => n.toLowerCase().includes(query.toLowerCase()));
       const data = inst();
       const v = byVersion[data.version];
-      const onTab = Object.entries(instances).filter(([, item]) => item.loader === data.loader);
       document.getElementById("instance").innerHTML = `
         <div class="page">
           <div class="form">
             <h1>Instance</h1>
-            <p class="note">Add a new client, or import one. The tab follows the loader.</p>
-            <div class="actions">
-              <button type="button" id="newClient">New +</button>
-              <span class="rule"></span>
-              <button type="button" id="importClient">Import</button>
+            <p class="note">Installed clients on this machine. Everything about adding a version lives in New +.</p>
+            <div class="topbar">
+              <span class="chip active">Installed</span>
+              <span class="grow"></span>
+              <button class="pill" id="newBtn" type="button">New +</button>
             </div>
-            <div class="import-box" id="importBox">
-              <input id="importName" type="text" placeholder="Client name" aria-label="Client name">
-              <input id="importPath" type="text" placeholder="Folder" aria-label="Folder" value="~/Games/Rus/import">
-              <button type="button" id="confirmImport">IMPORT</button>
+            <div class="search">
+              <input id="q" type="text" placeholder="Search installed instances" aria-label="Search instances" value="${query}">
             </div>
-            <div class="ltabs" id="loaderTabs">
-              ${LOADERS.map((name) => `<button type="button" class="${name === data.loader ? "active" : ""}" data-loader="${name}" title="${name}" aria-label="${name}"><img src="${tabArt(name)}" alt="${name}" onerror="tabPlate(this.closest('[data-loader]'), '${name}')"></button>`).join("")}
-            </div>
-            <div class="subtabs" id="subtabs">
-              <button type="button" data-pane="installed" class="${pane === "installed" ? "active" : ""}">Installed</button>
-              <button type="button" data-pane="advance" class="${pane === "advance" ? "active" : ""}">Advance</button>
-            </div>
-            ${pane === "installed" ? renderInstalled(data) : renderAdvance(data)}
-            <div class="label">CLIENTS ON ${data.loader.toUpperCase()}</div>
-            <div class="list" id="clientList">
-              ${onTab.map(([name, item]) => `
-                <div class="item">
-                  <span>${name}</span>
-                  <span class="badge">${item.source === "import" ? "IMPORTED" : "NEW"} · ${item.version}</span>
-                  <button type="button" data-open="${name}">OPEN</button>
-                </div>`).join("")}
+            ${flash ? `<p class="flash">${flash}</p>` : ""}
+            <div class="icards" id="icards">
+              ${names.map(cardHTML).join("") || `<p class="empty">No instance matches “${query}”.</p>`}
             </div>
           </div>
           <aside class="side">
-            <img class="side-art" src="${poster(v.file)}" alt="">
+            <img class="side-art" src="${data.image || poster(v.file)}" alt="">
             <div class="veil"></div>
             <div class="info">
               <div class="kicker">${data.loader}</div>
               <strong>${current}</strong>
-              <p>${data.version} · ${data.source === "import" ? "Imported" : "New"}</p>
+              <p>${data.version} · ${data.source === "import" ? "Imported" : "New"} · ${data.mods.length} mods · ${data.servers.length} servers</p>
               <button class="save" id="saveInst" type="button">SAVE</button>
             </div>
           </aside>
         </div>`;
-      document.getElementById("newClient").addEventListener("click", () => {
-        const name = "Client " + (Object.keys(instances).length + 1);
-        instances[name] = { version: data.version, loader: data.loader, source: "new", mods: [] };
-        current = name;
-        renderInstance();
-      });
-      document.getElementById("importClient").addEventListener("click", () => {
-        document.getElementById("importBox").classList.add("open");
-        document.getElementById("importName").focus();
-      });
-      document.getElementById("confirmImport").addEventListener("click", () => {
-        const name = document.getElementById("importName").value.trim();
-        if (!name) { document.getElementById("importName").focus(); return; }
-        instances[name] = { version: data.version, loader: data.loader, source: "import", mods: [] };
-        current = name;
-        renderInstance();
-      });
-      document.getElementById("loaderTabs").addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-loader]");
-        if (!btn || btn.dataset.loader === data.loader) return;
-        data.loader = btn.dataset.loader;
-        if (data.loader === "Vanilla") data.mods = [];
-        renderInstance();
-      });
-      document.getElementById("subtabs").addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-pane]");
-        if (!btn) return;
-        pane = btn.dataset.pane;
-        renderInstance();
-      });
-      const fam = document.getElementById("familyGrid");
-      if (fam) fam.addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-family]");
-        if (!btn) return;
-        family = btn.dataset.family;
-        pane = "advance";
-        renderInstance();
-      });
-      const picks = document.getElementById("picks");
-      if (picks) picks.addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-install]");
-        if (!btn) return;
-        const item = byVersion[btn.dataset.install];
-        item.installed = true;
-        data.version = item.version;
-        renderInstance();
-      });
-      const installedGrid = document.getElementById("installedGrid");
-      if (installedGrid) installedGrid.addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-version]");
-        if (!btn) return;
-        data.version = btn.dataset.version;
-        renderInstance();
-      });
-      document.getElementById("clientList").addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-open]");
-        if (!btn) return;
-        current = btn.dataset.open;
-        renderInstance();
-      });
+      document.getElementById("newBtn").addEventListener("click", openNewModal);
+      const q = document.getElementById("q");
+      q.addEventListener("input", () => { query = q.value; flash = ""; const pos = q.selectionStart; renderInstance(); const el = document.getElementById("q"); el.focus(); el.setSelectionRange(pos, pos); });
       document.getElementById("saveInst").addEventListener("click", () => {
         const btn = document.getElementById("saveInst");
         btn.textContent = "SAVED";
         setTimeout(() => { btn.textContent = "SAVE"; }, 800);
       });
+      const grid = document.getElementById("icards");
+      grid.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-act]");
+        if (!btn) return;
+        const name = btn.dataset.name;
+        if (btn.dataset.act === "open") { current = name; show("instance"); }
+        if (btn.dataset.act === "rename") openRename(name);
+        if (btn.dataset.act === "image") openImage(name);
+        if (btn.dataset.act === "servers") openServers(name);
+        if (btn.dataset.act === "duplicate") duplicate(name);
+        if (btn.dataset.act === "pin") togglePin(name);
+      });
+    }
+
+    /* ---------- instance actions ---------- */
+
+    function duplicate(name) {
+      let copy = "Copy of " + name;
+      let i = 2;
+      while (instances[copy]) { copy = "Copy of " + name + " " + i++; }
+      const src = instances[name];
+      instances[copy] = {
+        version: src.version, loader: src.loader, source: src.source,
+        image: src.image, mods: [...src.mods], servers: src.servers.map((s) => ({ ...s }))
+      };
+      current = copy;
+      flash = `${name} duplicated as ${copy}.`;
+      render();
+    }
+
+    function togglePin(name) {
+      const at = pins.indexOf(name);
+      if (at >= 0) { pins.splice(at, 1); flash = `${name} unpinned.`; }
+      else if (pins.length >= PIN_MAX) { flash = `The rail holds ${PIN_MAX} pins. Unpin one first.`; }
+      else { pins.push(name); flash = `${name} pinned to the rail.`; }
+      render();
+    }
+
+    function openRename(name) {
+      const mask = openModal({
+        title: "Rename instance",
+        body: `<div class="field"><span>NAME</span><input id="rn" type="text" value="${name}" aria-label="Instance name"></div>`,
+        actions: [
+          { label: "CANCEL", onClick: closeModal },
+          {
+            label: "RENAME", primary: true, onClick: () => {
+              const next = mask.querySelector("#rn").value.trim();
+              if (!next || next === name) { closeModal(); return; }
+              const old = instances[name];
+              delete instances[name];
+              instances[next] = old;
+              const at = pins.indexOf(name);
+              if (at >= 0) pins[at] = next;
+              if (current === name) current = next;
+              flash = `${name} renamed to ${next}.`;
+              closeModal();
+              render();
+            }
+          }
+        ]
+      });
+      const input = mask.querySelector("#rn");
+      input.focus();
+      input.setSelectionRange(0, input.value.length);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") mask.querySelector(".btn.primary").click(); });
+    }
+
+    function openImage(name) {
+      const it = instances[name];
+      const art = VERSIONS.map((v) => `<button type="button" data-img="${poster(v.file)}" class="${it.image === poster(v.file) ? "on" : ""}"><img src="${poster(v.file)}" alt="${v.version}"></button>`).join("");
+      const mask = openModal({
+        title: `Card image · ${name}`,
+        body: `<p class="note">Pick an update poster, or paste a path or URL to your own PNG.</p>
+          <div class="picker">${art}</div>
+          <div class="field"><span>CUSTOM PNG PATH OR URL</span><input id="imgPath" type="text" placeholder="~/Games/Rus/cover.png" value="${it.image || ""}" aria-label="Image path"></div>`,
+        actions: [
+          { label: "RESET", onClick: () => { it.image = null; flash = `${name} uses the default art again.`; closeModal(); render(); } },
+          { label: "CANCEL", onClick: closeModal },
+          {
+            label: "APPLY", primary: true, onClick: () => {
+              const val = mask.querySelector("#imgPath").value.trim();
+              it.image = val || null;
+              flash = val ? `${name} uses ${val}.` : `${name} uses the default art again.`;
+              closeModal();
+              render();
+            }
+          }
+        ]
+      });
+      mask.querySelector(".picker").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-img]");
+        if (!b) return;
+        it.image = b.dataset.img;
+        flash = `${name} card image set.`;
+        closeModal();
+        render();
+      });
+    }
+
+    function openServers(name) {
+      const it = instances[name];
+      const mask = openModal({
+        title: `Servers · ${name}`,
+        body: `<div id="srvBody">${serverList(it)}</div>
+          <div class="field"><span>ADD A SERVER</span></div>
+          <div class="add">
+            <input id="srvName" type="text" placeholder="Name" aria-label="Server name">
+            <input id="srvAddr" type="text" placeholder="Address" aria-label="Server address">
+            <button type="button" id="srvAdd">ADD</button>
+          </div>`,
+        actions: [{ label: "DONE", primary: true, onClick: () => { closeModal(); render(); } }]
+      });
+      const body = mask.querySelector("#srvBody");
+      body.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-rm]");
+        if (!btn) return;
+        it.servers.splice(Number(btn.dataset.rm), 1);
+        body.innerHTML = serverList(it);
+      });
+      mask.querySelector("#srvAdd").addEventListener("click", () => {
+        const n = mask.querySelector("#srvName").value.trim();
+        const a = mask.querySelector("#srvAddr").value.trim();
+        if (!n || !a) return;
+        it.servers.push({ name: n, address: a });
+        mask.querySelector("#srvName").value = "";
+        mask.querySelector("#srvAddr").value = "";
+        body.innerHTML = serverList(it);
+      });
+    }
+    function serverList(it) {
+      if (!it.servers.length) return `<p class="empty">No servers yet.</p>`;
+      return `<div class="list">${it.servers.map((s, i) => `
+        <div class="srv"><span>${s.name}</span><span class="addr">${s.address}</span>
+        <button class="mb" type="button" data-rm="${i}">REMOVE</button></div>`).join("")}</div>`;
+    }
+
+    /* ---------- new instance (popup) ---------- */
+
+    function openNewModal() {
+      draft = { name: "Client " + (Object.keys(instances).length + 1), mode: "new", folder: "~/Games/Rus/import", loader: "Fabric", version: "26.3", pane: "advance", family: "1.21" };
+      const mask = openModal({
+        title: "New instance",
+        body: `<div id="draftBody"></div>`,
+        actions: [
+          { label: "CANCEL", onClick: closeModal },
+          {
+            label: "CREATE", primary: true, onClick: () => {
+              const nm = (mask.querySelector("#draftName") || {}).value || draft.name;
+              let name = String(nm).trim() || draft.name;
+              let i = 2;
+              while (instances[name]) { name = String(nm).trim() + " " + i++; }
+              instances[name] = { version: draft.version, loader: draft.loader, source: draft.mode === "import" ? "import" : "new", image: null, mods: [], servers: [] };
+              current = name;
+              flash = `${name} created on ${draft.loader} ${draft.version}.`;
+              closeModal();
+              render();
+            }
+          }
+        ]
+      });
+      paintDraft();
+    }
+
+    function paintDraft() {
+      const box = document.getElementById("draftBody");
+      const groups = familyGroups();
+      const open = groups.find((g) => g.key === draft.family) || groups[0];
+      const picks = draft.pane === "installed"
+        ? VERSIONS.filter((v) => v.installed)
+        : open.items;
+      box.innerHTML = `
+        <div class="subtabs" id="modeTabs">
+          <button type="button" data-mode="new" class="${draft.mode === "new" ? "active" : ""}">New</button>
+          <button type="button" data-mode="import" class="${draft.mode === "import" ? "active" : ""}">Import</button>
+        </div>
+        <div class="field"><span>NAME</span><input id="draftName" type="text" value="${draft.name}" aria-label="Instance name"></div>
+        ${draft.mode === "import" ? `<div class="field"><span>FOLDER</span><input id="draftFolder" type="text" value="${draft.folder}" aria-label="Folder"></div>` : ""}
+        <div class="label">LOADER</div>
+        <div class="ltabs" id="draftLoaders">${loaderStrip(draft.loader)}</div>
+        <div class="subtabs" id="draftPanes">
+          <button type="button" data-pane="installed" class="${draft.pane === "installed" ? "active" : ""}">Installed</button>
+          <button type="button" data-pane="advance" class="${draft.pane === "advance" ? "active" : ""}">Advance</button>
+        </div>
+        ${draft.pane === "installed" ? "" : `<div class="cards" id="draftFamilies">
+          ${groups.map((g) => `<button class="vcard${g.key === open.key ? " active" : ""}" type="button" data-family="${g.key}">
+            <img class="art" src="${poster(g.face.file)}" alt=""><span class="scrim"></span>
+            <span class="head"><img src="icons/${g.face.file}" alt=""><b>${familyLabel(g)}</b><i>${draft.loader}</i></span>
+          </button>`).join("")}
+        </div>`}
+        <div class="label">${draft.pane === "installed" ? "INSTALLED RELEASES" : open.key + " RELEASES"}</div>
+        ${pickRows(picks, draft.version)}
+        ${draft.pane === "installed" && !picks.length ? `<p class="empty">Nothing installed yet. Use Advance to install one.</p>` : ""}
+        <p class="note">Creating on <b>${draft.loader}</b> with <b>${draft.version}</b>.</p>`;
+      wireDraft(box);
+    }
+
+    function wireDraft(box) {
+      box.querySelector("#modeTabs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-mode]");
+        if (!b) return;
+        draft.mode = b.dataset.mode;
+        paintDraft();
+      });
+      box.querySelector("#draftLoaders").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-loader]");
+        if (!b) return;
+        draft.loader = b.dataset.loader;
+        paintDraft();
+      });
+      box.querySelector("#draftPanes").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-pane]");
+        if (!b) return;
+        draft.pane = b.dataset.pane;
+        paintDraft();
+      });
+      const fams = box.querySelector("#draftFamilies");
+      if (fams) fams.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-family]");
+        if (!b) return;
+        draft.family = b.dataset.family;
+        paintDraft();
+      });
+      const picks = box.querySelector("#picks");
+      if (picks) picks.addEventListener("click", (e) => {
+        const install = e.target.closest("[data-install]");
+        if (install) {
+          const item = byVersion[install.dataset.install];
+          item.installed = true;
+          draft.version = item.version;
+          paintDraft();
+          return;
+        }
+        const row = e.target.closest("[data-pick]");
+        if (row) { draft.version = row.dataset.pick; paintDraft(); }
+      });
+      const nameField = box.querySelector("#draftName");
+      if (nameField) nameField.addEventListener("input", () => { draft.name = nameField.value; });
+      const folderField = box.querySelector("#draftFolder");
+      if (folderField) folderField.addEventListener("input", () => { draft.folder = folderField.value; });
+    }
+
+    /* ---------- mods ---------- */
+
+    async function runSearch() {
+      const box = document.getElementById("results");
+      const status = document.getElementById("bstatus");
+      if (!box) return;
+      status.innerHTML = `<p class="empty">Loading…</p>`;
+      box.innerHTML = "";
+      const loader = inst().loader.toLowerCase();
+      if (browse.source === "curseforge") {
+        if (!cfKey) {
+          status.innerHTML = `<p class="empty">CurseForge needs an API key. Add it in Settings → CurseForge API key.</p>`;
+          return;
+        }
+        try {
+          const url = `https://api.curseforge.com/v1/mods/search?gameId=432&classId=${CF_CLASS[browse.type]}&searchFilter=${encodeURIComponent(browse.query)}&pageSize=12`;
+          const res = await fetch(url, { headers: { "x-api-key": cfKey } });
+          const json = await res.json();
+          browse.results = (json.data || []).map((m) => ({
+            title: m.name, description: m.summary, icon: m.logo && m.logo.thumbnailUrl, downloads: m.downloadCount
+          }));
+        } catch (err) {
+          status.innerHTML = `<p class="empty">CurseForge blocked the browser call. That API needs a small proxy or a desktop client.</p>`;
+          return;
+        }
+      } else {
+        const facets = [["project_type:" + browse.type]];
+        if (browse.type !== "resourcepack" && browse.type !== "shader" && loader !== "vanilla") facets.push(["categories:" + loader]);
+        try {
+          const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(browse.query)}&facets=${encodeURIComponent(JSON.stringify(facets))}&limit=12`;
+          const res = await fetch(url);
+          const json = await res.json();
+          browse.results = (json.hits || []).map((h) => ({
+            title: h.title, description: h.description, icon: h.icon_url, downloads: h.downloads
+          }));
+        } catch (err) {
+          status.innerHTML = `<p class="empty">Modrinth could not be reached. Check the connection and try again.</p>`;
+          return;
+        }
+      }
+      paintResults();
+    }
+
+    function paintResults() {
+      const box = document.getElementById("results");
+      const status = document.getElementById("bstatus");
+      if (!box) return;
+      status.innerHTML = "";
+      if (!browse.results.length) { box.innerHTML = `<p class="empty">No results.</p>`; return; }
+      box.innerHTML = browse.results.map((h) => `
+        <div class="hit">
+          <img src="${h.icon || "brand/mark.png"}" alt="">
+          <div>
+            <h4>${h.title}</h4>
+            <p>${(h.description || "").slice(0, 120)}</p>
+            <p class="addr">${(h.downloads || 0).toLocaleString("en-US")} downloads</p>
+            <button class="mb" type="button" data-add="${encodeURIComponent(h.title)}">ADD</button>
+          </div>
+        </div>`).join("");
+      box.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-add]");
+        if (!b) return;
+        const name = decodeURIComponent(b.dataset.add);
+        if (!inst().mods.includes(name)) inst().mods.push(name);
+        b.textContent = "ADDED";
+        b.classList.add("on");
+        renderModsList();
+      });
+    }
+
+    function renderModsList() {
+      const list = document.getElementById("modList");
+      if (!list) return;
+      const data = inst();
+      list.innerHTML = data.mods.map((name, i) => `<div class="item"><span>${name}</span><button type="button" data-i="${i}">REMOVE</button></div>`).join("")
+        || `<p class="empty">No mods yet.</p>`;
+      list.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+        data.mods.splice(Number(b.dataset.i), 1);
+        renderModsList();
+      }));
     }
 
     function renderMods() {
       const data = inst();
       const v = byVersion[data.version];
-      const canAdd = data.source !== "import" && data.loader !== "Vanilla";
-      const reason = data.source === "import"
-        ? "This client was imported. Mods stay inside that client."
-        : "Vanilla has no loader. Choose Fabric, Forge, NeoForge, or Quilt before adding mods.";
       document.getElementById("mods").innerHTML = `
         <div class="mods-wrap">
           <p class="kicker">MODS</p>
           <h1>${current}</h1>
           <p class="note">${v.version} · ${data.loader}${data.source === "import" ? " · Imported" : ""}</p>
-          ${canAdd ? `<div class="mod-add"><input id="modName" type="text" placeholder="Mod name" aria-label="Mod name"><button type="button" id="addMod">ADD MOD</button></div>` : `<p class="empty">${reason}</p>`}
+          <div class="browse">
+            <input id="bq" type="text" placeholder="Search for content" aria-label="Search" value="${browse.query}">
+            <div class="chips" id="srcTabs">
+              <button class="chip${browse.source === "modrinth" ? " active" : ""}" type="button" data-src="modrinth">Modrinth</button>
+              <button class="chip${browse.source === "curseforge" ? " active" : ""}" type="button" data-src="curseforge">CurseForge</button>
+            </div>
+            <div class="chips" id="typeTabs">
+              ${TYPES.map(([key, label]) => `<button class="chip${browse.type === key ? " active" : ""}" type="button" data-type="${key}">${label}</button>`).join("")}
+            </div>
+            <button class="btn primary" id="doSearch" type="button">SEARCH</button>
+          </div>
+          <div id="bstatus"></div>
+          <div class="results" id="results"></div>
+          <div class="label">INSTALLED ON ${current.toUpperCase()}</div>
           <div class="list" id="modList"></div>
         </div>`;
-      const list = document.getElementById("modList");
-      list.innerHTML = data.mods.map((name, i) => `<div class="item"><span>${name}</span><button type="button" data-i="${i}">REMOVE</button></div>`).join("")
-        || (canAdd ? `<p class="empty">No mods yet.</p>` : "");
-      list.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
-        data.mods.splice(Number(b.dataset.i), 1);
-        renderMods();
-      }));
-      const add = document.getElementById("addMod");
-      if (add) add.addEventListener("click", () => {
-        const input = document.getElementById("modName");
-        const name = input.value.trim();
-        if (!name) { input.focus(); return; }
-        data.mods.push(name);
+      document.getElementById("bq").addEventListener("input", (e) => { browse.query = e.target.value; });
+      document.getElementById("bq").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+      document.getElementById("doSearch").addEventListener("click", runSearch);
+      document.getElementById("srcTabs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-src]");
+        if (!b) return;
+        browse.source = b.dataset.src;
+        browse.results = [];
         renderMods();
       });
+      document.getElementById("typeTabs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-type]");
+        if (!b) return;
+        browse.type = b.dataset.type;
+        browse.results = [];
+        renderMods();
+      });
+      renderModsList();
     }
 
+    /* ---------- skin + keys ---------- */
+
+    const SKIN_LABEL = { local: "Local skin file", microsoft: "Microsoft account", tlauncher: "TLauncher account" };
+    function paintSkin() {
+      document.querySelectorAll("#skin button").forEach((b) => b.classList.toggle("on", b.dataset.skin === skin.source));
+      document.getElementById("skinAccount").textContent = skin.account ? `Connected as ${skin.account}` : SKIN_LABEL[skin.source];
+      const btn = document.getElementById("skinConnect");
+      btn.style.visibility = skin.source === "local" ? "hidden" : "visible";
+      btn.textContent = skin.account ? "DISCONNECT" : "CONNECT";
+    }
+    document.getElementById("skin").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-skin]");
+      if (!b) return;
+      skin.source = b.dataset.skin;
+      skin.account = null;
+      paintSkin();
+    });
+    document.getElementById("skinConnect").addEventListener("click", () => {
+      if (skin.account) { skin.account = null; }
+      else {
+        const who = skin.source === "microsoft" ? "Obsifox" : "Obsifox_TL";
+        skin.account = who;
+      }
+      paintSkin();
+    });
+    document.getElementById("cfSet").addEventListener("click", () => {
+      const mask = openModal({
+        title: "CurseForge API key",
+        body: `<p class="note">Paste the key from console.curseforge.com. It is kept for this session only.</p>
+          <div class="field"><span>API KEY</span><input id="cfInput" type="text" value="${cfKey}" aria-label="API key"></div>`,
+        actions: [
+          { label: "CLEAR", onClick: () => { cfKey = ""; document.getElementById("cfKey").textContent = "Not set"; closeModal(); } },
+          { label: "CANCEL", onClick: closeModal },
+          {
+            label: "SAVE", primary: true, onClick: () => {
+              cfKey = mask.querySelector("#cfInput").value.trim();
+              document.getElementById("cfKey").textContent = cfKey ? "Key saved" : "Not set";
+              closeModal();
+            }
+          }
+        ]
+      });
+    });
+
+    /* ---------- shell wiring ---------- */
+
     document.querySelector(".rail").addEventListener("click", (e) => {
+      const pin = e.target.closest("[data-pin]");
+      if (pin) {
+        current = pin.dataset.pin;
+        if (!instances[current]) return;
+        show("instance");
+        return;
+      }
       const btn = e.target.closest(".tab");
       if (!btn) return;
       show(btn.dataset.view);
@@ -635,6 +1101,7 @@
       const on = e.currentTarget.classList.toggle("on");
       e.currentTarget.textContent = on ? "On" : "Off";
     });
+    paintSkin();
     show("instance");
   </script>
 </body>

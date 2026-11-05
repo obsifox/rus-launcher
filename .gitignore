@@ -3,8 +3,7 @@ release/
 gate-install/target/
 
 # scratch renders
-launcher/screenshot.png
-launcher/screenshot-installed.png
+launcher/screenshot*.png
 launcher/cards.png
 launcher/tabs-strip.png
 launcher/rail-labels.png
