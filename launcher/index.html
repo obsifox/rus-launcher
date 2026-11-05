@@ -171,6 +171,10 @@
       font: 500 9px/1 Inter, sans-serif; font-style: normal; letter-spacing: 0.08em;
       text-transform: uppercase; color: #bcb8cf;
     }
+    .vcard .head img.tag {
+      width: 46px; height: 14px; margin-left: auto; object-fit: cover;
+      border-radius: 2px; display: block; opacity: 0.96;
+    }
     .vcard:hover { border-color: #4a4a55; }
     .vcard:hover .art { opacity: 1; }
     .vcard.active { border-color: #e23b45; box-shadow: inset 0 0 0 1px #e23b45; }
@@ -267,7 +271,12 @@
       border: 1px solid #2c2c32; border-radius: 4px; overflow: hidden; background: #1b1b1f;
       text-align: left; color: #f4f5f7; display: flex; flex-direction: column;
     }
+    .icard .cover-wrap { position: relative; flex: none; height: 116px; background: #111; }
     .icard .cover { height: 116px; width: 100%; object-fit: cover; object-position: center 40%; display: block; background: #111; }
+    .icard .badge-tag {
+      position: absolute; right: 8px; top: 8px; width: 46px; height: 14px;
+      object-fit: cover; border-radius: 2px; box-shadow: 0 1px 4px rgba(0,0,0,.65);
+    }
     .icard .pad { padding: 10px 12px 12px; flex: 1; display: flex; flex-direction: column; }
     .icard h3 { margin: 0; font: 600 14px/1.2 Inter, sans-serif; overflow-wrap: anywhere; }
     .icard .meta { margin-top: 5px; color: #9b9ca3; font-size: 12px; }
@@ -596,6 +605,10 @@
       }
       return [...map.entries()].map(([key, items]) => ({ key, items, face: items[0] }));
     }
+    function loaderTag(loader) {
+      return `<img class="tag" src="tabs/${loader.toLowerCase()}@1x.png" alt="${loader}" title="${loader}" onerror="this.style.display='none'">`;
+    }
+
     function familyLabel(g) {
       return g.items.length > 1 ? g.key + ".x" : g.items[0].version;
     }
@@ -622,10 +635,13 @@
       const img = it.image || poster(v.file);
       const pinned = pins.includes(name);
       return `<div class="icard">
-        <img class="cover" src="${img}" alt="">
+        <div class="cover-wrap">
+          <img class="cover" src="${img}" alt="">
+          <img class="badge-tag" src="tabs/${it.loader.toLowerCase()}@1x.png" alt="${it.loader}" title="${it.loader}" onerror="this.style.display='none'">
+        </div>
         <div class="pad">
           <h3>${name}</h3>
-          <div class="meta">${it.version} · ${it.loader}${it.source === "import" ? " · imported" : ""}</div>
+          <div class="meta">${it.version}${it.source === "import" ? " · imported" : ""}</div>
           <div class="row">
             <button class="mb${name === current ? " on" : ""}" type="button" data-act="open" data-name="${name}">OPEN</button>
             <button class="mb" type="button" data-act="rename" data-name="${name}">RENAME</button>
@@ -665,6 +681,7 @@
             <div class="veil"></div>
             <div class="info">
               <div class="kicker">${data.loader}</div>
+              <img class="badge-tag" style="position:static; margin: 8px 0 0;" src="tabs/${data.loader.toLowerCase()}@1x.png" alt="${data.loader}" onerror="this.style.display='none'">
               <strong>${current}</strong>
               <p>${data.version} · ${data.source === "import" ? "Imported" : "New"} · ${data.mods.length} mods · ${data.servers.length} servers</p>
               <button class="save" id="saveInst" type="button">SAVE</button>
@@ -866,7 +883,7 @@
         ${draft.pane === "installed" ? "" : `<div class="cards" id="draftFamilies">
           ${groups.map((g) => `<button class="vcard${g.key === open.key ? " active" : ""}" type="button" data-family="${g.key}">
             <img class="art" src="${poster(g.face.file)}" alt=""><span class="scrim"></span>
-            <span class="head"><img src="icons/${g.face.file}" alt=""><b>${familyLabel(g)}</b><i>${draft.loader}</i></span>
+            <span class="head"><img src="icons/${g.face.file}" alt=""><b>${familyLabel(g)}</b>${loaderTag(draft.loader)}</span>
           </button>`).join("")}
         </div>`}
         <div class="label">${draft.pane === "installed" ? "INSTALLED RELEASES" : open.key + " RELEASES"}</div>
