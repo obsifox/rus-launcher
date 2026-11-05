@@ -274,8 +274,12 @@
     .icard .cover-wrap { position: relative; flex: none; height: 116px; background: #111; }
     .icard .cover { height: 116px; width: 100%; object-fit: cover; object-position: center 40%; display: block; background: #111; }
     .icard .badge-tag {
-      position: absolute; right: 8px; top: 8px; width: 46px; height: 14px;
-      object-fit: cover; border-radius: 2px; box-shadow: 0 1px 4px rgba(0,0,0,.65);
+      position: absolute; right: 8px; top: 8px; width: 54px; height: 16px;
+      object-fit: cover; border-radius: 2px; box-shadow: 0 1px 5px rgba(0,0,0,.7);
+    }
+    .icard .meta img.tag {
+      width: 54px; height: 16px; object-fit: cover; border-radius: 2px;
+      margin-left: 6px; vertical-align: -3px; display: inline-block;
     }
     .icard .pad { padding: 10px 12px 12px; flex: 1; display: flex; flex-direction: column; }
     .icard h3 { margin: 0; font: 600 14px/1.2 Inter, sans-serif; overflow-wrap: anywhere; }
@@ -307,7 +311,7 @@
     .btn.primary:hover { background: #ff4d57; }
     .btn.ghost { background: transparent; border: 1px solid #34343c; color: #c5c6cc; }
     .field { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 4px; }
-    .field > span { color: #9b9ca3; font: 600 11px/1 Inter, sans-serif; letter-spacing: 0.14em; }
+    .field > span { color: #9b9ca3; font: 600 11px/1 Inter, sans-serif; letter-spacing: 0.14em; margin-bottom: 8px; }
     .field input {
       height: 36px; border: 1px solid #2c2c32; border-radius: 2px; background: #1b1b1f;
       padding: 0 12px; font-size: 13px; outline: none; color: #f4f5f7;
@@ -631,10 +635,6 @@
         </div>`).join("")}</div>`;
     }
 
-    function loaderStrip(loader) {
-      return LOADERS.map((name) => `<button type="button" class="${name === loader ? "active" : ""}" data-loader="${name}" title="${name}" aria-label="${name}"><img src="${tabArt(name)}" alt="${name}" onerror="tabPlate(this.closest('[data-loader]'), '${name}')"></button>`).join("");
-    }
-
     /* ---------- instance page ---------- */
 
     function cardHTML(name) {
@@ -649,7 +649,7 @@
         </div>
         <div class="pad">
           <h3>${name}</h3>
-          <div class="meta">${it.version}${it.source === "import" ? " · imported" : ""}</div>
+          <div class="meta">${it.version}<img class="tag" src="tabs/${it.loader.toLowerCase()}@1x.png" alt="${it.loader}" title="${it.loader}" onerror="this.style.display='none'">${it.source === "import" ? " · imported" : ""}</div>
           <div class="row">
             <button class="mb${name === current ? " on" : ""}" type="button" data-act="open" data-name="${name}">OPEN</button>
             <button class="mb" type="button" data-act="rename" data-name="${name}">RENAME</button>
@@ -879,8 +879,11 @@
         </div>
         <div class="field"><span>NAME</span><input id="draftName" type="text" value="${draft.name}" aria-label="Instance name"></div>
         ${draft.mode === "import" ? `<div class="field"><span>FOLDER</span><input id="draftFolder" type="text" value="${draft.folder}" aria-label="Folder"></div>` : ""}
-        <div class="label">LOADER</div>
-        <div class="ltabs" id="draftLoaders">${loaderStrip(draft.loader)}</div>
+        <div class="field"><span>LOADER</span>
+          <div class="chips" id="draftLoaders">
+            ${LOADERS.map((n) => `<button class="chip${n === draft.loader ? " active" : ""}" type="button" data-loader="${n}">${n}</button>`).join("")}
+          </div>
+        </div>
         <div class="vbox">
         <div class="cards" id="draftFamilies">
           ${groups.map((g) => `<button class="vcard${g.key === open.key ? " active" : ""}" type="button" data-family="${g.key}">
