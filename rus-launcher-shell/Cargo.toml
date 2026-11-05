@@ -1,0 +1,13 @@
+[package]
+name = "rus-launcher-shell"
+version = "0.1.0"
+edition = "2021"
+description = "Rus Launcher. Serves the interface and opens it in a window of its own."
+publish = false
+
+[dependencies]
+include_dir = "0.7"
+
+[[bin]]
+name = "rus-launcher-shell"
+path = "src/main.rs"

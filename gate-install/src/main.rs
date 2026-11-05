@@ -1,6 +1,11 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use std::sync::Arc;
+mod install;
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use eframe::egui::{
@@ -15,22 +20,27 @@ const FONT_REGULAR: &[u8] = include_bytes!("../assets/Inter-Regular.ttf");
 const FONT_MEDIUM: &[u8] = include_bytes!("../assets/Inter-Medium.ttf");
 const FONT_SEMIBOLD: &[u8] = include_bytes!("../assets/Inter-SemiBold.ttf");
 
-const SPLASH_SECS: u64 = 6;
+const SPLASH_SECS: u64 = 3;
 const DESIGN: Vec2 = Vec2::new(420.0, 728.0);
 
 enum Phase {
     Splash,
-    Launcher,
+    Work,
 }
 
 struct GateInstall {
     started: Instant,
     phase: Phase,
     placed: bool,
-    advanced: bool,
     splash: TextureHandle,
     wordmark: TextureHandle,
-    mark: TextureHandle,
+    _mark: TextureHandle,
+    log: install::Log,
+    done: Arc<AtomicBool>,
+    launcher: Arc<Mutex<Option<PathBuf>>>,
+    worker: Option<JoinHandle<()>>,
+    launched: bool,
+    close_at: Option<Instant>,
 }
 
 fn load_texture(ctx: &egui::Context, name: &str, bytes: &[u8]) -> TextureHandle {
@@ -76,10 +86,15 @@ impl GateInstall {
             started: Instant::now(),
             phase: Phase::Splash,
             placed: false,
-            advanced: false,
             splash: load_texture(ctx, "splash", SPLASH_PNG),
             wordmark: load_texture(ctx, "wordmark", WORDMARK_PNG),
-            mark: load_texture(ctx, "mark", MARK_PNG),
+            _mark: load_texture(ctx, "mark", MARK_PNG),
+            log: install::Log::default(),
+            done: Arc::new(AtomicBool::new(false)),
+            launcher: Arc::new(Mutex::new(None)),
+            worker: None,
+            launched: false,
+            close_at: None,
         }
     }
 
@@ -94,32 +109,48 @@ impl GateInstall {
             self.placed = true;
         }
     }
+
+    fn start_work(&mut self) {
+        let log = self.log.clone();
+        let done = self.done.clone();
+        let launcher = self.launcher.clone();
+        self.worker = Some(std::thread::spawn(move || {
+            let dir = install::ensure_installed(&log);
+            let path = install::sync_launcher(&dir, &log);
+            *launcher.lock().expect("launcher") = path;
+            done.store(true, Ordering::SeqCst);
+        }));
+    }
 }
 
 impl eframe::App for GateInstall {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        match self.phase {
-            Phase::Splash => [0.0, 0.0, 0.0, 0.0],
-            Phase::Launcher => [0.0, 0.0, 0.0, 0.0],
-        }
+        [0.0, 0.0, 0.0, 0.0]
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if self.started.elapsed() >= Duration::from_secs(SPLASH_SECS)
-            && matches!(self.phase, Phase::Splash)
+        if matches!(self.phase, Phase::Splash)
+            && self.started.elapsed() >= Duration::from_secs(SPLASH_SECS)
         {
-            self.phase = Phase::Launcher;
+            self.phase = Phase::Work;
             self.placed = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Title("Gate Install".into()));
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(DESIGN));
+            self.start_work();
         }
 
         match self.phase {
             Phase::Splash => self.paint_splash(ctx),
-            Phase::Launcher => self.paint_launcher(ctx),
+            Phase::Work => self.paint_work(ctx),
+        }
+
+        if let Some(at) = self.close_at {
+            if Instant::now() >= at {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
         ctx.request_repaint_after(Duration::from_millis(100));
     }
@@ -134,17 +165,34 @@ impl GateInstall {
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
                 let rect = ui.max_rect();
-                ui.painter().image(
-                    self.wordmark.id(),
-                    rect,
-                    unit_uv(),
-                    Color32::WHITE,
-                );
+                ui.painter()
+                    .image(self.wordmark.id(), rect, unit_uv(), Color32::WHITE);
             });
     }
 
-    fn paint_launcher(&mut self, ctx: &egui::Context) {
+    fn paint_work(&mut self, ctx: &egui::Context) {
+        let finished = self.done.load(Ordering::SeqCst);
+        if finished && !self.launched {
+            self.launched = true;
+            let path = self.launcher.lock().expect("launcher").clone();
+            match path {
+                Some(path) => {
+                    self.log.line("Starting Rus Launcher.");
+                    if install::launch(&path) {
+                        self.close_at = Some(Instant::now() + Duration::from_millis(900));
+                    } else {
+                        self.log.line("The launcher did not start.");
+                        self.close_at = Some(Instant::now() + Duration::from_millis(1800));
+                    }
+                }
+                None => {
+                    self.close_at = Some(Instant::now() + Duration::from_millis(1600));
+                }
+            }
+        }
+
         self.place(ctx, DESIGN);
+        let lines = self.log.lines();
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
@@ -221,94 +269,64 @@ impl GateInstall {
                     );
                 }
 
-                if self.advanced {
-                    let panel =
-                        Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 548.0 * s), rect.max);
-                    ui.painter().rect_filled(
-                        panel,
-                        CornerRadius::ZERO,
-                        Color32::from_rgba_unmultiplied(10, 12, 18, 235),
-                    );
-                    ui.painter().text(
-                        Pos2::new(rect.center().x, rect.top() + 590.0 * s),
-                        Align2::CENTER_CENTER,
-                        "Install location",
-                        FontId::new(15.0 * s, FontFamily::Name("semibold".into())),
-                        Color32::WHITE,
-                    );
-                    let field = Rect::from_center_size(
-                        Pos2::new(rect.center().x, rect.top() + 634.0 * s),
-                        Vec2::new(300.0 * s, 36.0 * s),
-                    );
-                    ui.painter().rect_filled(
-                        field,
-                        CornerRadius::same(3),
-                        Color32::from_rgb(28, 32, 42),
-                    );
-                    ui.painter().text(
-                        field.left_center() + Vec2::new(12.0 * s, 0.0),
-                        Align2::LEFT_CENTER,
-                        "Choose a folder",
-                        FontId::new(13.0 * s, FontFamily::Proportional),
-                        Color32::from_rgb(186, 190, 198),
-                    );
-                    let back = tracked(
-                        ui,
-                        "BACK",
-                        Pos2::new(rect.center().x, rect.top() + 684.0 * s),
-                        FontId::new(11.0 * s, FontFamily::Name("medium".into())),
-                        Color32::from_rgb(228, 230, 234),
-                        1.8 * s,
-                    );
-                    let hit = ui.interact(
-                        back.expand2(Vec2::new(12.0, 10.0)),
-                        ui.id().with("back"),
-                        Sense::click(),
-                    );
-                    if hit
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        self.advanced = false;
+                // status block where the install button used to be
+                let panel = Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 548.0 * s), rect.max);
+                ui.painter().rect_filled(
+                    panel,
+                    CornerRadius::ZERO,
+                    Color32::from_rgba_unmultiplied(10, 12, 18, 235),
+                );
+
+                let headline = if finished {
+                    "Ready"
+                } else {
+                    "Installing"
+                };
+                ui.painter().text(
+                    Pos2::new(rect.center().x, rect.top() + 574.0 * s),
+                    Align2::CENTER_CENTER,
+                    headline,
+                    FontId::new(15.0 * s, FontFamily::Name("semibold".into())),
+                    Color32::WHITE,
+                );
+
+                // indeterminate progress bar
+                let bar = Rect::from_center_size(
+                    Pos2::new(rect.center().x, rect.top() + 602.0 * s),
+                    Vec2::new(300.0 * s, 6.0 * s),
+                );
+                ui.painter()
+                    .rect_filled(bar, CornerRadius::same(3), Color32::from_rgb(38, 42, 52));
+                if !finished {
+                    let span = bar.width();
+                    let head = (self.started.elapsed().as_millis() as f32 / 9.0) % (span * 1.6);
+                    let start = head - span * 0.3;
+                    let from = (bar.left() + start).max(bar.left());
+                    let to = (bar.left() + start + span * 0.3).min(bar.right());
+                    if to > from {
+                        ui.painter().rect_filled(
+                            Rect::from_min_max(Pos2::new(from, bar.top()), Pos2::new(to, bar.bottom())),
+                            CornerRadius::same(3),
+                            Color32::from_rgb(46, 188, 190),
+                        );
                     }
                 } else {
-                    let button =
-                        Rect::from_min_size(at(54.0, 582.0), Vec2::new(312.0 * s, 68.0 * s));
-                    let response = ui.interact(button, ui.id().with("install"), Sense::click());
-                    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let fill = if response.hovered() {
-                        Color32::from_rgb(70, 208, 210)
-                    } else {
-                        Color32::from_rgb(46, 188, 190)
-                    };
-                    ui.painter()
-                        .rect_filled(button, CornerRadius::same(3), fill);
+                    ui.painter().rect_filled(
+                        bar,
+                        CornerRadius::same(3),
+                        Color32::from_rgb(46, 188, 190),
+                    );
+                }
+
+                let shown: Vec<String> = lines.iter().rev().take(3).cloned().collect();
+                for (i, line) in shown.iter().enumerate() {
                     ui.painter().text(
-                        button.center(),
+                        Pos2::new(rect.center().x, rect.top() + (634.0 + i as f32 * 20.0) * s),
                         Align2::CENTER_CENTER,
-                        "Install",
-                        FontId::new(22.0 * s, FontFamily::Name("semibold".into())),
-                        Color32::from_rgb(10, 16, 28),
+                        line.clone(),
+                        FontId::new(12.0 * s, FontFamily::Proportional),
+                        Color32::from_rgb(186, 190, 198),
                     );
-                    let options = tracked(
-                        ui,
-                        "ADVANCED OPTIONS",
-                        Pos2::new(rect.center().x, at(0.0, 668.0).y),
-                        FontId::new(11.0 * s, FontFamily::Name("medium".into())),
-                        Color32::from_rgb(228, 230, 234),
-                        1.8 * s,
-                    );
-                    let opt = ui.interact(
-                        options.expand2(Vec2::new(8.0, 8.0)),
-                        ui.id().with("advanced"),
-                        Sense::click(),
-                    );
-                    if opt
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        self.advanced = true;
-                    }
                 }
 
                 ui.painter().text(
@@ -326,34 +344,14 @@ fn unit_uv() -> Rect {
     Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
 }
 
-fn tracked(ui: &egui::Ui, text: &str, center: Pos2, font: FontId, color: Color32, tracking: f32) -> Rect {
-    let painter = ui.painter();
-    let mut widths = Vec::new();
-    for ch in text.chars() {
-        let galley = painter.layout_no_wrap(ch.to_string(), font.clone(), color);
-        widths.push(galley.size().x);
-    }
-    let gaps = text.chars().count().saturating_sub(1) as f32;
-    let total = widths.iter().sum::<f32>() + tracking * gaps;
-    let mut x = center.x - total * 0.5;
-    let mut height: f32 = 0.0;
-    for (ch, width) in text.chars().zip(widths) {
-        let galley = painter.layout_no_wrap(ch.to_string(), font.clone(), color);
-        height = height.max(galley.size().y);
-        painter.galley(
-            Pos2::new(x, center.y - galley.size().y * 0.5),
-            galley,
-            color,
-        );
-        x += width + tracking;
-    }
-    Rect::from_min_size(
-        Pos2::new(center.x - total * 0.5, center.y - height * 0.5),
-        Vec2::new(total, height),
-    )
-}
-
 fn main() -> eframe::Result {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "/uninstall") {
+        let dir = install::app_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        return Ok(());
+    }
+
     let viewport = egui::ViewportBuilder::default()
         .with_title("Gate Install")
         .with_inner_size([480.0, 148.0])

@@ -10,59 +10,121 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: windows-x86_64
-            target: x86_64-pc-windows-msvc
-            bin: gate-install.exe
-            asset: gate-install-windows-x86_64.exe
-          - os: ubuntu-latest
-            name: linux-x86_64
-            target: x86_64-unknown-linux-gnu
-            bin: gate-install
-            asset: gate-install-linux-x86_64
+  windows:
+    name: windows-x86_64
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: gate-install
-
-      - name: Build
+      - name: Build Gate Install
         working-directory: gate-install
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release
+
+      - name: Build the launcher
+        shell: bash
+        run: |
+          mkdir -p rus-launcher-shell/assets/launcher
+          cp -r launcher/index.html launcher/icons launcher/posters launcher/tabs launcher/fonts launcher/brand rus-launcher-shell/assets/launcher/
+          cd rus-launcher-shell
+          cargo build --release
 
       - name: Package
         shell: bash
         run: |
           mkdir -p dist
-          cp "gate-install/target/${{ matrix.target }}/release/${{ matrix.bin }}" "dist/${{ matrix.asset }}"
+          cp gate-install/target/release/gate-install.exe dist/gate-install-windows-x86_64.exe
+          cp rus-launcher-shell/target/release/rus-launcher-shell.exe dist/rus-launcher-windows-x86_64.exe
           ls -l dist
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: dist/${{ matrix.asset }}
+          name: windows-x86_64
+          path: dist/*
           if-no-files-found: error
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.asset }}
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux:
+    name: linux-x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build Gate Install
+        working-directory: gate-install
+        run: cargo build --release
+
+      - name: Build the launcher
+        run: |
+          mkdir -p rus-launcher-shell/assets/launcher
+          cp -r launcher/index.html launcher/icons launcher/posters launcher/tabs launcher/fonts launcher/brand rus-launcher-shell/assets/launcher/
+          cd rus-launcher-shell
+          cargo build --release
+
+      - name: AppImage
+        run: |
+          set -e
+          mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/256x256/apps
+          cp rus-launcher-shell/target/release/rus-launcher-shell AppDir/usr/bin/
+          cp launcher/brand/mark.png AppDir/usr/share/icons/hicolor/256x256/apps/rus-launcher.png
+          cp launcher/brand/mark.png AppDir/rus-launcher.png
+          cat > AppDir/rus-launcher.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Rus Launcher
+          Comment=Game launcher by Obsifox Studio
+          Exec=rus-launcher-shell
+          Icon=rus-launcher
+          Categories=Game;Utility;
+          Terminal=false
+          EOF
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/sh
+          exec "$APPDIR/usr/bin/rus-launcher-shell" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          curl -fsSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract-and-run AppDir rus-launcher-x86_64.AppImage
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp gate-install/target/release/gate-install dist/gate-install-linux-x86_64
+          cp rus-launcher-x86_64.AppImage dist/rus-launcher-x86_64.AppImage
+          if [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+            printf '%s\n' "${GITHUB_REF#refs/tags/v}" > dist/version.txt
+          else
+            printf 'main\n' > dist/version.txt
+          fi
+          chmod +x dist/gate-install-linux-x86_64
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          tag_name: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
