@@ -316,6 +316,14 @@
       margin-top: 4px; max-height: 320px; overflow: auto; background: #101013;
       border: 1px solid #23232a; border-radius: 4px; padding: 10px;
     }
+    .vbox .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    .vbox .vcard { width: 100%; height: 104px; }
+    .pick .state {
+      margin-left: auto; height: 26px; display: inline-flex; align-items: center; padding: 0 8px;
+      border: 1px solid #34343c; border-radius: 2px; color: #9b9ca3;
+      font: 600 10px/1 Inter, sans-serif; letter-spacing: 0.06em; white-space: nowrap;
+    }
+    .pick .state.on { border-color: #2f6b45; color: #7fd18d; }
     .vbox::-webkit-scrollbar { width: 10px; }
     .vbox::-webkit-scrollbar-thumb { background: #2c2c32; border-radius: 5px; }
     .vbox::-webkit-scrollbar-track { background: #101013; }
@@ -613,13 +621,13 @@
       return g.items.length > 1 ? g.key + ".x" : g.items[0].version;
     }
 
-    function pickRows(items, selected) {
+    function pickRows(items) {
       return `<div class="picks" id="picks">${items.map((item) => `
         <div class="pick" data-pick="${item.version}">
           <img src="icons/${item.file}" alt="">
           <b>${item.version}</b>
           <span>${item.name}</span>
-          <button class="install${item.installed ? " done" : ""}" type="button" data-install="${item.version}">${item.installed ? "INSTALLED" : "INSTALL"}</button>
+          <span class="state${item.installed ? " on" : ""}">${item.installed ? "INSTALLED" : "DOWNLOADS ON LAUNCH"}</span>
         </div>`).join("")}</div>`;
     }
 
@@ -835,7 +843,7 @@
     /* ---------- new instance (popup) ---------- */
 
     function openNewModal() {
-      draft = { name: "Client " + (Object.keys(instances).length + 1), mode: "new", folder: "~/Games/Rus/import", loader: "Fabric", version: "26.3", pane: "advance", family: "1.21" };
+      draft = { name: "Client " + (Object.keys(instances).length + 1), mode: "new", folder: "~/Games/Rus/import", loader: "Fabric", version: "26.3", family: "1.21" };
       const mask = openModal({
         title: "New instance",
         body: `<div id="draftBody"></div>`,
@@ -863,9 +871,7 @@
       const box = document.getElementById("draftBody");
       const groups = familyGroups();
       const open = groups.find((g) => g.key === draft.family) || groups[0];
-      const picks = draft.pane === "installed"
-        ? VERSIONS.filter((v) => v.installed)
-        : open.items;
+      const picks = open.items;
       box.innerHTML = `
         <div class="subtabs" id="modeTabs">
           <button type="button" data-mode="new" class="${draft.mode === "new" ? "active" : ""}">New</button>
@@ -875,22 +881,19 @@
         ${draft.mode === "import" ? `<div class="field"><span>FOLDER</span><input id="draftFolder" type="text" value="${draft.folder}" aria-label="Folder"></div>` : ""}
         <div class="label">LOADER</div>
         <div class="ltabs" id="draftLoaders">${loaderStrip(draft.loader)}</div>
-        <div class="subtabs" id="draftPanes">
-          <button type="button" data-pane="installed" class="${draft.pane === "installed" ? "active" : ""}">Installed</button>
-          <button type="button" data-pane="advance" class="${draft.pane === "advance" ? "active" : ""}">Advance</button>
-        </div>
         <div class="vbox">
-        ${draft.pane === "installed" ? "" : `<div class="cards" id="draftFamilies">
+        <div class="cards" id="draftFamilies">
           ${groups.map((g) => `<button class="vcard${g.key === open.key ? " active" : ""}" type="button" data-family="${g.key}">
             <img class="art" src="${poster(g.face.file)}" alt=""><span class="scrim"></span>
             <span class="head"><img src="icons/${g.face.file}" alt=""><b>${familyLabel(g)}</b>${loaderTag(draft.loader)}</span>
           </button>`).join("")}
-        </div>`}
-        <div class="label">${draft.pane === "installed" ? "INSTALLED RELEASES" : open.key + " RELEASES"}</div>
-        ${pickRows(picks, draft.version)}
-        ${draft.pane === "installed" && !picks.length ? `<p class="empty">Nothing installed yet. Use Advance to install one.</p>` : ""}
         </div>
-        <p class="note">Creating on <b>${draft.loader}</b> with <b>${draft.version}</b>.</p>`;
+        <div class="label">${open.key} RELEASES</div>
+        ${pickRows(picks)}
+        </div>
+        <p class="note">Creating <b>${draft.name}</b> on <b>${draft.loader}</b> with <b>${draft.version}</b>.${
+          byVersion[draft.version] && !byVersion[draft.version].installed ? " That version downloads on the first launch." : ""
+        }</p>`;
       wireDraft(box);
     }
 
@@ -907,12 +910,6 @@
         draft.loader = b.dataset.loader;
         paintDraft();
       });
-      box.querySelector("#draftPanes").addEventListener("click", (e) => {
-        const b = e.target.closest("[data-pane]");
-        if (!b) return;
-        draft.pane = b.dataset.pane;
-        paintDraft();
-      });
       const fams = box.querySelector("#draftFamilies");
       if (fams) fams.addEventListener("click", (e) => {
         const b = e.target.closest("[data-family]");
@@ -922,16 +919,10 @@
       });
       const picks = box.querySelector("#picks");
       if (picks) picks.addEventListener("click", (e) => {
-        const install = e.target.closest("[data-install]");
-        if (install) {
-          const item = byVersion[install.dataset.install];
-          item.installed = true;
-          draft.version = item.version;
-          paintDraft();
-          return;
-        }
         const row = e.target.closest("[data-pick]");
-        if (row) { draft.version = row.dataset.pick; paintDraft(); }
+        if (!row) return;
+        draft.version = row.dataset.pick;
+        paintDraft();
       });
       const nameField = box.querySelector("#draftName");
       if (nameField) nameField.addEventListener("input", () => { draft.name = nameField.value; });
