@@ -1,0 +1,15 @@
+# build output
+release/
+gate-install/target/
+
+# scratch renders
+launcher/screenshot.png
+launcher/screenshot-installed.png
+launcher/cards.png
+launcher/tabs-strip.png
+launcher/rail-labels.png
+launcher/preview.png
+install/preview.png
+install/scene.png
+__pycache__/
+gate-install/assets/scene.png

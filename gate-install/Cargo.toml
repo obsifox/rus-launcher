@@ -1,0 +1,10 @@
+[package]
+name = "gate-install"
+version = "0.1.0"
+edition = "2021"
+description = "Gate Install. Shows the studio image, then opens the launcher."
+publish = false
+
+[dependencies]
+eframe = "0.31"
+image = { version = "0.25", default-features = false, features = ["png"] }
