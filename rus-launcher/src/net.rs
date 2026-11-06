@@ -357,10 +357,9 @@ fn run(source: &str, kind: &str, query: &str, loader: &str, cf_key: &str) -> Res
                 downloads: hit.get("downloads").and_then(|v| v.as_u64()).unwrap_or(0),
                 added: false,
                 slug: hit.get("slug").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                version: hit
-                    .get("latest_version")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                // Modrinth's search answers with a version id here, not a
+                // version number, so the real one is fetched on demand.
+                version: None,
             });
         }
         for (hit, handle) in out.iter_mut().zip(icons) {

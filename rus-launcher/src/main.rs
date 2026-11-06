@@ -34,6 +34,10 @@ pub struct App {
     icons: net::Icons,
     /// Which drawer the running dependency lookup belongs to.
     deps_kind: crate::data::Kind,
+    /// True when the running lookup should ask before it installs.
+    deps_ask: bool,
+    /// Lookups that had to wait because another one was still running.
+    dep_queue: Vec<(String, String, crate::data::Kind, bool)>,
     /// Which drawer of the Directory is open.
     pub drawer: crate::data::Kind,
     /// Text typed into the Directory's add row.
@@ -60,6 +64,8 @@ impl App {
             deps: net::Deps::default(),
             icons: net::Icons::default(),
             deps_kind: crate::data::Kind::Mods,
+            deps_ask: false,
+            dep_queue: Vec::new(),
             drawer: crate::data::Kind::Mods,
             dir_name: String::new(),
             dir_address: String::new(),
@@ -98,11 +104,82 @@ impl App {
     }
 
     /// Starts a dependency lookup for `slug`, remembering where it belongs.
-    pub fn fetch_deps(&mut self, slug: &str, name: &str, kind: crate::data::Kind) {
-        let instance = self.state.current_instance().clone();
+    /// `ask` opens a popup on the Mods page so the choice is the player's;
+    /// everywhere else the required ones simply install themselves.
+    pub fn fetch_deps(&mut self, slug: &str, name: &str, kind: crate::data::Kind, ask: bool) {
+        if self.deps.busy {
+            if !self
+                .dep_queue
+                .iter()
+                .any(|(queued, _, queued_kind, _)| queued == slug && *queued_kind == kind)
+            {
+                self.dep_queue
+                    .push((slug.to_string(), name.to_string(), kind, ask));
+            }
+            return;
+        }
+        self.deps_ask = ask;
         self.deps_kind = kind;
+        let instance = self.state.current_instance().clone();
         self.deps
             .fetch(slug, name, &instance.loader, &instance.version);
+    }
+
+    /// Installs what the player ticked in the dependency popup. Required
+    /// entries are always taken; the rest only when they were ticked.
+    pub fn install_deps(&mut self, parent: &str, items: &[crate::modal::DepItem]) {
+        let kind = self.deps_kind;
+        let mut taken: Vec<String> = Vec::new();
+        let mut chained: Vec<(String, String)> = Vec::new();
+        {
+            let id = self.state.current;
+            let instance = self.state.instance_mut(id);
+            if let Some(list) = instance.entries_mut(kind) {
+                for item in items {
+                    if !item.required && !item.take {
+                        continue;
+                    }
+                    if list.iter().any(|e| {
+                        e.slug.as_deref() == Some(item.slug.as_str()) || e.name == item.title
+                    }) {
+                        continue;
+                    }
+                    let entry = if item.required {
+                        crate::data::Entry::dependency(
+                            &item.title,
+                            &item.slug,
+                            &item.description,
+                            item.icon.clone(),
+                        )
+                    } else {
+                        crate::data::Entry::found(
+                            &item.title,
+                            &item.slug,
+                            &item.description,
+                            item.icon.clone(),
+                        )
+                    };
+                    list.push(entry);
+                    taken.push(item.title.clone());
+                    if !item.required {
+                        chained.push((item.slug.clone(), item.title.clone()));
+                    }
+                }
+            }
+        }
+        self.state.save();
+        if taken.is_empty() {
+            self.state
+                .flash(format!("{parent} installed on its own."));
+        } else {
+            let word = if taken.len() == 1 { "with" } else { "with" };
+            self.state
+                .flash(format!("{parent} installed {word} {}.", taken.join(", ")));
+        }
+        // Anything the player picked drags its own prerequisites along.
+        for (slug, name) in chained {
+            self.fetch_deps(&slug, &name, kind, false);
+        }
     }
 
     /// Collects everything the worker threads came back with.
@@ -143,82 +220,104 @@ impl App {
                     self.state.save();
                     if chained {
                         let kind = self.deps_kind;
-                        self.fetch_deps(&slug, &name, kind);
+                        self.fetch_deps(&slug, &name, kind, false);
                     }
                 }
             }
         }
 
-        // Dependencies: the required ones install themselves, the rest are offered.
-        if let Some((slug, parent, found)) = self.deps.poll() {
+        // Dependencies: the Mods page asks before it installs, everywhere
+        // else the required ones simply install themselves.
+        if let Some((_slug, parent, found)) = self.deps.poll() {
+            let ask = self.deps_ask;
+            self.deps_ask = false;
             match found {
                 Some(deps) => {
                     let kind = self.deps_kind;
                     let id = self.state.current;
-                    let mut installed: Vec<String> = Vec::new();
-                    let mut optional: Vec<crate::data::Entry> = Vec::new();
-                    let instance = self.state.instance_mut(id);
-                    if let Some(list) = instance.entries_mut(kind) {
-                            for dep in deps {
-                                let project = dep.project;
-                                let known = list.iter().any(|e| {
-                                    e.slug.as_deref() == Some(project.slug.as_str())
-                                        || e.name == project.title
-                                });
-                                if known {
-                                    continue;
-                                }
-                                if dep.required {
-                                    list.push(crate::data::Entry::dependency(
-                                        &project.title,
-                                        &project.slug,
-                                        &project.description,
-                                        project.icon_url.clone(),
-                                    ));
-                                    installed.push(project.title.clone());
-                                } else {
-                                    optional.push(crate::data::Entry::found(
-                                        &project.title,
-                                        &project.slug,
-                                        &project.description,
-                                        project.icon_url.clone(),
-                                    ));
+                    let mut items: Vec<crate::modal::DepItem> = Vec::new();
+                    {
+                        let installed = self.state.instance(id).map(|i| i.entries(kind));
+                        for dep in deps {
+                            let project = dep.project;
+                            let known = installed
+                                .map(|list| {
+                                    list.iter().any(|e| {
+                                        e.slug.as_deref() == Some(project.slug.as_str())
+                                            || e.name == project.title
+                                    })
+                                })
+                                .unwrap_or(false);
+                            if known {
+                                continue;
+                            }
+                            items.push(crate::modal::DepItem {
+                                title: project.title,
+                                slug: project.slug,
+                                description: project.description,
+                                icon: project.icon_url,
+                                required: dep.required,
+                                take: false,
+                            });
+                        }
+                    }
+                    if ask {
+                        if items.is_empty() {
+                            self.state.flash(format!("{parent} needs nothing else."));
+                        } else {
+                            self.open_deps(&parent, items);
+                        }
+                    } else {
+                        let required: Vec<crate::modal::DepItem> = items
+                            .iter()
+                            .filter(|item| item.required)
+                            .cloned()
+                            .collect();
+                        if !required.is_empty() {
+                            {
+                                let instance = self.state.instance_mut(id);
+                                if let Some(list) = instance.entries_mut(kind) {
+                                    for item in &required {
+                                        list.push(crate::data::Entry::dependency(
+                                            &item.title,
+                                            &item.slug,
+                                            &item.description,
+                                            item.icon.clone(),
+                                        ));
+                                    }
                                 }
                             }
+                            let names: Vec<String> =
+                                required.iter().map(|i| i.title.clone()).collect();
+                            let word = if names.len() == 1 {
+                                "dependency"
+                            } else {
+                                "dependencies"
+                            };
+                            self.state.flash(format!(
+                                "{parent} needs {} {word}: {}.",
+                                names.len(),
+                                names.join(", ")
+                            ));
+                            self.state.save();
+                        }
                     }
-                    let instance = self.state.instance_mut(id);
-                    instance.offers = optional;
-                    instance.offers_kind = kind.key().to_string();
-                    instance.offers_for = parent.clone();
-                    if !installed.is_empty() {
-                        let word = if installed.len() == 1 {
-                            "dependency"
-                        } else {
-                            "dependencies"
-                        };
-                        self.state.flash(format!(
-                            "{parent} needs {} {word}: {}.",
-                            installed.len(),
-                            installed.join(", ")
-                        ));
-                    } else if let Some(count) = self
-                        .state
-                        .instance(id)
-                        .map(|i| i.offers.len())
-                        .filter(|n| *n > 0)
-                    {
-                        self.state.flash(format!(
-                            "{parent} has {count} optional {}.",
-                            if count == 1 { "extra" } else { "extras" }
-                        ));
-                    }
-                    let _ = slug;
-                    self.state.save();
                 }
-                None => self.state.flash(format!(
-                    "Could not read the dependencies of {parent}."
-                )),
+                None => self
+                    .state
+                    .flash(format!("Could not read the dependencies of {parent}.")),
             }
+        }
+    }
+
+    /// Runs the next waiting dependency lookup, if any.
+    fn drain_dep_queue(&mut self) {
+        if self.deps.busy {
+            return;
+        }
+        if let Some((slug, name, kind, ask)) = self.dep_queue.first().cloned() {
+            self.dep_queue.remove(0);
+            self.fetch_deps(&slug, &name, kind, ask);
         }
     }
 
@@ -254,6 +353,7 @@ impl eframe::App for App {
         self.search.poll();
         self.updates.poll(&mut self.state);
         self.apply_lookups();
+        self.drain_dep_queue();
 
         // Pages fade in, buttons flash their confirmation label and the Modrinth
         // and CurseForge lookups run on a worker thread: all of them need frames

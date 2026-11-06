@@ -921,7 +921,7 @@ impl App {
             if added {
                 match slug {
                     Some(value) => {
-                        self.fetch_deps(&value, &title, crate::data::Kind::Mods);
+                        self.fetch_deps(&value, &title, crate::data::Kind::Mods, true);
                         self.state
                             .flash(format!("{title} added. Looking for dependencies…"));
                     }
@@ -1314,102 +1314,6 @@ impl App {
                     }
                 }
 
-                // optional extras, offered after an install
-                if kind != Kind::Servers
-                    && instance.offers_kind == kind.key()
-                    && !instance.offers.is_empty()
-                {
-                    ui.add_space(20.0);
-                    let title = format!("OPTIONAL FOR {}", instance.offers_for.to_uppercase());
-                    let (rect, _) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width() - 56.0, 14.0),
-                        Sense::hover(),
-                    );
-                    kicker(ui.painter(), Pos2::new(rect.min.x + 28.0, rect.min.y), &title);
-                    ui.add_space(10.0);
-                    let offers = instance.offers.clone();
-                    for (slot, offer) in offers.iter().enumerate() {
-                        let (rect, _) = ui.allocate_exact_size(
-                            Vec2::new(ui.available_width() - 56.0, 56.0),
-                            Sense::hover(),
-                        );
-                        let item = Rect::from_min_max(
-                            Pos2::new(rect.min.x + 28.0, rect.min.y),
-                            Pos2::new(rect.max.x - 28.0, rect.min.y + 56.0),
-                        );
-                        ui.painter().rect_filled(item, CornerRadius::same(RADIUS), CARD);
-                        let clipped = ui.painter().with_clip_rect(item);
-                        let icon_rect = Rect::from_min_size(
-                            Pos2::new(item.min.x + 12.0, item.center().y - 18.0),
-                            Vec2::new(36.0, 36.0),
-                        );
-                        let texture = match offer.icon.clone() {
-                            Some(url) => match self.icons.get(&url).cloned() {
-                                Some(pixels) => self.assets.store(&ctx, &url, &pixels),
-                                None => {
-                                    self.icons.want(&url);
-                                    None
-                                }
-                            },
-                            None => self.assets.id(&ctx, "brand/mark.png"),
-                        };
-                        if let Some(texture) = texture {
-                            clipped.add(
-                                egui::epaint::RectShape::filled(
-                                    icon_rect,
-                                    CornerRadius::same(RADIUS),
-                                    Color32::WHITE,
-                                )
-                                .with_texture(texture, uv()),
-                            );
-                        }
-                        let text_x = icon_rect.max.x + 12.0;
-                        clipped.text(
-                            Pos2::new(text_x, item.min.y + 11.0),
-                            Align2::LEFT_TOP,
-                            offer.name.clone(),
-                            bold(13.0),
-                            TEXT,
-                        );
-                        let body = if offer.summary().chars().count() > 88 {
-                            format!("{}…", offer.summary().chars().take(88).collect::<String>())
-                        } else {
-                            offer.summary()
-                        };
-                        let wrap = (item.max.x - 140.0 - text_x).max(80.0);
-                        let galley =
-                            ctx.fonts(|f| f.layout(body, regular(12.0), MUTED, wrap));
-                        clipped.galley(Pos2::new(text_x, item.min.y + 31.0), galley, MUTED);
-                        let w = text_width(ui.ctx(), "ADD", &bold(11.0)) + 20.0;
-                        let btn = Rect::from_min_size(
-                            Pos2::new(item.max.x - 12.0 - w, item.center().y - 13.0),
-                            Vec2::new(w, 26.0),
-                        );
-                        if button(
-                            ui,
-                            ui.id().with("offer-add").with(slot),
-                            btn,
-                            &Button::ghost("ADD").font(bold(10.0)),
-                        )
-                        .clicked()
-                        {
-                            let entry = offer.clone();
-                            let id = self.state.current;
-                            let instance = self.state.instance_mut(id);
-                            if let Some(list) = instance.entries_mut(kind) {
-                                if !list.iter().any(|e| e.name == entry.name) {
-                                    list.push(entry);
-                                }
-                            }
-                            let live = self.state.instance_mut(id);
-                            if slot < live.offers.len() {
-                                live.offers.remove(slot);
-                            }
-                            self.state.save();
-                        }
-                        ui.add_space(8.0);
-                    }
-                }
                 ui.add_space(28.0);
             });
     }

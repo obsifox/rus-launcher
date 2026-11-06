@@ -249,11 +249,6 @@ pub struct Instance {
     pub resourcepacks: Vec<Entry>,
     pub shaderpacks: Vec<Entry>,
     pub servers: Vec<Server>,
-    /// Optional dependencies offered after the last install.
-    pub offers: Vec<Entry>,
-    /// Drawer name the offers belong to, and the project they came from.
-    pub offers_kind: String,
-    pub offers_for: String,
 }
 
 impl Instance {
@@ -437,9 +432,6 @@ impl State {
             resourcepacks: Vec::new(),
             shaderpacks: Vec::new(),
             servers: Vec::new(),
-            offers: Vec::new(),
-            offers_kind: String::new(),
-            offers_for: String::new(),
         });
         id
     }
@@ -526,9 +518,6 @@ impl State {
         cloned.resourcepacks = source.resourcepacks.clone();
         cloned.shaderpacks = source.shaderpacks.clone();
         cloned.servers = source.servers.clone();
-        cloned.offers = source.offers.clone();
-        cloned.offers_kind = source.offers_kind.clone();
-        cloned.offers_for = source.offers_for.clone();
         self.current = copy;
         let original = source.name.clone();
         self.flash(format!("{original} duplicated as {name}."));
@@ -599,9 +588,6 @@ impl State {
                     "resourcepacks": entries_json(&i.resourcepacks),
                     "shaderpacks": entries_json(&i.shaderpacks),
                     "servers": i.servers.iter().map(|s| serde_json::json!({"name": s.name, "address": s.address, "enabled": s.enabled})).collect::<Vec<_>>(),
-                    "offers": entries_json(&i.offers),
-                    "offers_kind": i.offers_kind,
-                    "offers_for": i.offers_for,
                 })
             })
             .collect();
@@ -690,21 +676,6 @@ impl State {
                                 .collect()
                         })
                         .unwrap_or_default();
-                    let offers = item
-                        .get("offers")
-                        .and_then(|v| v.as_array())
-                        .map(|list| entries_from(list))
-                        .unwrap_or_default();
-                    let offers_kind = item
-                        .get("offers_kind")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string();
-                    let offers_for = item
-                        .get("offers_for")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string();
                     self.next_id = self.next_id.max(id + 1);
                     self.instances.push(Instance {
                         id,
@@ -717,9 +688,6 @@ impl State {
                         resourcepacks,
                         shaderpacks,
                         servers,
-                        offers,
-                        offers_kind,
-                        offers_for,
                     });
                 }
                 ok = true;

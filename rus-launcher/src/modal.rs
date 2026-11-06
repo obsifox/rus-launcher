@@ -6,6 +6,18 @@ use crate::theme::*;
 use crate::pages::field_label;
 use crate::App;
 
+/// One line of the dependency popup: a project the mod can pull in.
+#[derive(Clone)]
+pub struct DepItem {
+    pub title: String,
+    pub slug: String,
+    pub description: String,
+    pub icon: Option<String>,
+    /// Required dependencies install with the mod and cannot be unticked.
+    pub required: bool,
+    pub take: bool,
+}
+
 #[derive(Clone)]
 pub enum ModalKind {
     New {
@@ -36,6 +48,11 @@ pub enum ModalKind {
     },
     CfKey {
         key: String,
+    },
+    /// What a mod needs, shown the moment it is installed from the Mods page.
+    Deps {
+        parent: String,
+        items: Vec<DepItem>,
     },
 }
 
@@ -114,6 +131,14 @@ impl App {
         });
     }
 
+    /// Shows what `parent` needs before the player decides what goes in.
+    pub fn open_deps(&mut self, parent: &str, items: Vec<DepItem>) {
+        self.modal.open(ModalKind::Deps {
+            parent: parent.to_string(),
+            items,
+        });
+    }
+
     pub fn open_cf_key(&mut self) {
         let key = self.state.settings.cf_key.clone();
         self.modal.open(ModalKind::CfKey { key });
@@ -137,6 +162,7 @@ impl App {
         let mut cf: Option<String> = None;
         let mut edit: Option<(u64, String, String)> = None;
         let mut action: Option<u8> = None;
+        let mut install: Option<(String, Vec<DepItem>)> = None;
         let mut confirm = self.edit_confirm;
         let mut state = std::mem::replace(&mut self.state, State::new());
 
@@ -155,6 +181,8 @@ impl App {
                 // action row, so it needs more height than the other popups
                 let height = if matches!(kind, ModalKind::Edit { .. }) {
                     screen.height().min(790.0)
+                } else if matches!(kind, ModalKind::Deps { .. }) {
+                    (screen.height().min(680.0)).min(190.0 + 62.0 * deps_len(&kind) as f32)
                 } else {
                     screen.height().min(680.0)
                 };
@@ -183,6 +211,7 @@ impl App {
                             format!("Servers · {name}")
                         }
                         ModalKind::CfKey { .. } => "CurseForge API key".to_string(),
+                        ModalKind::Deps { parent, .. } => format!("What {parent} needs"),
                     };
                     let header = Rect::from_min_size(rect.min, Vec2::new(width, 51.0));
                     ui.painter().text(
@@ -239,6 +268,7 @@ impl App {
                         }
                         ModalKind::Servers { .. } => vec![("DONE", true)],
                         ModalKind::Edit { .. } => vec![("CANCEL", false), ("SAVE", true)],
+                        ModalKind::Deps { .. } => vec![("SKIP", false), ("INSTALL", true)],
                         _ => vec![("CANCEL", false), ("CREATE", true)],
                     };
                     let picked = footer_buttons(ui, footer, &buttons);
@@ -300,6 +330,15 @@ impl App {
                             ModalKind::Servers { id, name, address } => {
                                 servers_body(ui, &mut state, *id, name, address);
                             }
+                            ModalKind::Deps { items, .. } => {
+                                deps_body(
+                                    ui,
+                                    ctx,
+                                    &mut self.assets,
+                                    &mut self.icons,
+                                    items,
+                                );
+                            }
                             ModalKind::CfKey { key } => {
                                 ui.add_space(6.0);
                                 note_text(ui, "Paste the key from console.curseforge.com. It is kept for this session only.");
@@ -329,6 +368,14 @@ impl App {
                                 1 => close = true,
                                 _ => cf = Some(key.clone()),
                             },
+                            ModalKind::Deps { parent, items } => {
+                                if index == 0 {
+                                    close = true;
+                                } else {
+                                    install = Some((parent.clone(), items.clone()));
+                                    close = true;
+                                }
+                            }
                             ModalKind::Servers { .. } => close = true,
                             ModalKind::Edit { .. } => {
                                 if index == 0 {
@@ -422,6 +469,9 @@ impl App {
 
         self.state = state;
 
+        if let Some((parent, items)) = install {
+            self.install_deps(&parent, &items);
+        }
         if close {
             self.modal.close();
         }
@@ -1042,5 +1092,98 @@ fn servers_body(ui: &mut Ui, state: &mut State, id: u64, name: &mut String, addr
             name.clear();
             address.clear();
         }
+    }
+}
+
+/// How many lines the dependency popup needs.
+fn deps_len(kind: &ModalKind) -> usize {
+    match kind {
+        ModalKind::Deps { items, .. } => items.len(),
+        _ => 0,
+    }
+}
+
+/// The dependency list: required entries are locked on, the rest are a switch.
+fn deps_body(
+    ui: &mut Ui,
+    ctx: &Context,
+    assets: &mut Assets,
+    icons: &mut crate::net::Icons,
+    items: &mut [DepItem],
+) {
+    note_text(
+        ui,
+        "Required dependencies come with the mod. Switch on anything else you want and it installs too, prerequisites included.",
+    );
+    ui.add_space(14.0);
+    for (slot, item) in items.iter_mut().enumerate() {
+        let (rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 56.0), Sense::hover());
+        let row = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 48.0));
+        ui.painter()
+            .rect_filled(row, CornerRadius::same(RADIUS), CARD);
+        let clipped = ui.painter().with_clip_rect(row);
+        let icon_rect = Rect::from_min_size(
+            Pos2::new(row.min.x + 12.0, row.center().y - 16.0),
+            Vec2::new(32.0, 32.0),
+        );
+        let texture = match item.icon.clone() {
+            Some(url) => match icons.get(&url).cloned() {
+                Some(pixels) => assets.store(ctx, &url, &pixels),
+                None => {
+                    icons.want(&url);
+                    None
+                }
+            },
+            None => None,
+        };
+        let texture = texture.or_else(|| assets.id(ctx, "brand/mark.png"));
+        if let Some(texture) = texture {
+            clipped.add(
+                egui::epaint::RectShape::filled(
+                    icon_rect,
+                    CornerRadius::same(RADIUS),
+                    Color32::WHITE,
+                )
+                .with_texture(texture, uv()),
+            );
+        }
+        let text_x = icon_rect.max.x + 12.0;
+        clipped.text(
+            Pos2::new(text_x, row.min.y + 9.0),
+            Align2::LEFT_TOP,
+            item.title.clone(),
+            bold(13.0),
+            TEXT,
+        );
+        let body = if item.description.chars().count() > 92 {
+            format!(
+                "{}…",
+                item.description.chars().take(92).collect::<String>()
+            )
+        } else {
+            item.description.clone()
+        };
+        let wrap = (row.max.x - 150.0 - text_x).max(80.0);
+        let galley = ctx.fonts(|f| f.layout(body, regular(12.0), MUTED, wrap));
+        clipped.galley(Pos2::new(text_x, row.min.y + 28.0), galley, MUTED);
+        if item.required {
+            clipped.text(
+                Pos2::new(row.max.x - 14.0, row.center().y),
+                Align2::RIGHT_CENTER,
+                "REQUIRED",
+                medium(10.0),
+                DIM,
+            );
+        } else {
+            let sw = Rect::from_min_size(
+                Pos2::new(row.max.x - 14.0 - 34.0, row.center().y - 9.0),
+                Vec2::new(34.0, 18.0),
+            );
+            if switch(ui, ui.id().with("dep-take").with(slot), sw, item.take) {
+                item.take = !item.take;
+            }
+        }
+        ui.add_space(8.0);
     }
 }
