@@ -297,6 +297,9 @@ pub struct Settings {
     pub skin_name: String,
     pub skin_url: String,
     pub skin_model: String,
+    pub skin_uuid: String,
+    /// A skin chosen straight off the disk.
+    pub skin_local: String,
     pub account: Option<String>,
     pub cf_key: String,
     pub close_on_play: bool,
@@ -312,6 +315,8 @@ impl Default for Settings {
             skin_name: String::new(),
             skin_url: String::new(),
             skin_model: String::new(),
+            skin_uuid: String::new(),
+            skin_local: String::new(),
             account: None,
             cf_key: String::new(),
             close_on_play: true,
@@ -557,7 +562,7 @@ impl State {
 
     /* ---------- persistence ---------- */
 
-    fn path() -> Option<PathBuf> {
+    pub fn path() -> Option<PathBuf> {
         #[cfg(windows)]
         {
             let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
@@ -610,6 +615,8 @@ impl State {
                 "skin_name": self.settings.skin_name,
                 "skin_url": self.settings.skin_url,
                 "skin_model": self.settings.skin_model,
+                "skin_uuid": self.settings.skin_uuid,
+                "skin_local": self.settings.skin_local,
                 "account": self.settings.account,
                 "close_on_play": self.settings.close_on_play,
             },
@@ -750,6 +757,12 @@ impl State {
             }
             if let Some(v) = settings.get("skin_model").and_then(|v| v.as_str()) {
                 self.settings.skin_model = v.to_string();
+            }
+            if let Some(v) = settings.get("skin_uuid").and_then(|v| v.as_str()) {
+                self.settings.skin_uuid = v.to_string();
+            }
+            if let Some(v) = settings.get("skin_local").and_then(|v| v.as_str()) {
+                self.settings.skin_local = v.to_string();
             }
             self.settings.account = settings
                 .get("account")

@@ -238,9 +238,6 @@ impl App {
     /// The account the player connected: their skin, their nickname, and
     /// whether TLauncher had a skin for them. Home only.
     fn home_profile(&mut self, ui: &mut Ui, hero: Rect) {
-        if self.state.settings.skin != "tlauncher" {
-            return;
-        }
         let ctx = ui.ctx().clone();
         let known = self.state.settings.account.clone();
         let typed = self.state.settings.skin_name.trim().to_string();
@@ -248,17 +245,23 @@ impl App {
             .clone()
             .or_else(|| Some(typed.clone()).filter(|value| !value.is_empty()))
             .unwrap_or_else(|| "Not connected".to_string());
+        let where_from = match self.state.settings.skin.as_str() {
+            "microsoft" => "Minecraft",
+            "local" => "File",
+            _ => "TLauncher",
+        };
         let status = if self.skin.is_some() {
-            match self.state.settings.skin_model.as_str() {
-                "slim" => "TLauncher · slim skin".to_string(),
-                _ => "TLauncher · classic skin".to_string(),
-            }
+            let model = match self.state.settings.skin_model.as_str() {
+                "slim" => "slim",
+                _ => "classic",
+            };
+            format!("{where_from} · {model} skin")
         } else if self.skins.busy {
-            "Checking TLauncher…".to_string()
-        } else if !typed.is_empty() {
-            "No skin on TLauncher yet".to_string()
+            "Checking…".to_string()
+        } else if !typed.is_empty() || self.state.settings.skin == "local" {
+            "No skin yet".to_string()
         } else {
-            "Add a nickname in Settings".to_string()
+            "Add a name in Settings".to_string()
         };
         let w = 244.0f32;
         let h = 66.0f32;
@@ -294,7 +297,13 @@ impl App {
                     Pos2::new(40.0 / skin.width as f32, 8.0 / skin.height as f32),
                     Pos2::new(48.0 / skin.width as f32, 16.0 / skin.height as f32),
                 );
-                for uv in [face, hat] {
+                // only the tall layout carries the hat layer; on a legacy
+                // 64x32 skin those pixels are part of the body, not a hat
+                let mut layers = vec![face];
+                if skin.height >= 64 && skin.width >= 48 {
+                    layers.push(hat);
+                }
+                for uv in layers {
                     clipped.add(
                         egui::epaint::RectShape::filled(
                             head,
@@ -1598,120 +1607,149 @@ impl App {
                     self.state.save();
                 }
 
-                if self.state.settings.skin == "tlauncher" {
-                    let enter = self.settings_row(ui, width, "TLauncher nickname", |ui, app| {
-                        let mut name = app.state.settings.skin_name.clone();
-                        // the row lays its body out right to left: the button
-                        // takes the edge and the field sits beside it
-                        let label = if app.skins.busy { "CHECKING…" } else { "CHECK" };
-                        let w = text_width(ui.ctx(), label, &bold(10.0)) + 24.0;
-                        let (rect, _) =
-                            ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
-                        let field_w = 236.0f32;
-                        let field = Rect::from_min_size(
-                            Pos2::new(
-                                rect.min.x - 12.0 - field_w,
-                                ui.max_rect().center().y - 18.0,
-                            ),
-                            Vec2::new(field_w, 36.0),
-                        );
-                        let response = input(
-                            &mut ui.child_ui(
-                                field,
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                None,
-                            ),
-                            &mut name,
-                            field_w,
-                            "Nickname",
-                        );
-                        if name != app.state.settings.skin_name {
-                            app.state.settings.skin_name = name;
+                // where the skin comes from: a name for the two online
+                // sources, a file on disk for the local one
+                let source = self.state.settings.skin.clone();
+                let online = source != "local";
+                let title = match source.as_str() {
+                    "microsoft" => "Minecraft name",
+                    "local" => "Skin file",
+                    _ => "TLauncher nickname",
+                };
+                let hint = if online { "Nickname" } else { "/path/to/skin.png" };
+                let enter = self.settings_row(ui, width, title, |ui, app| {
+                    let local = app.state.settings.skin == "local";
+                    let mut value = if local {
+                        app.state.settings.skin_local.clone()
+                    } else {
+                        app.state.settings.skin_name.clone()
+                    };
+                    // the row lays its body out right to left: the button
+                    // takes the edge and the field sits beside it
+                    let label = if app.skins.busy { "CHECKING…" } else { "CHECK" };
+                    let w = text_width(ui.ctx(), label, &bold(10.0)) + 24.0;
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
+                    let field_w = 300.0f32;
+                    let field = Rect::from_min_size(
+                        Pos2::new(
+                            rect.min.x - 12.0 - field_w,
+                            ui.max_rect().center().y - 18.0,
+                        ),
+                        Vec2::new(field_w, 36.0),
+                    );
+                    let response = input(
+                        &mut ui.child_ui(
+                            field,
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            None,
+                        ),
+                        &mut value,
+                        field_w,
+                        hint,
+                    );
+                    if local {
+                        if value != app.state.settings.skin_local {
+                            app.state.settings.skin_local = value;
                             app.state.save();
                         }
-                        let style = Button::ghost(label).font(bold(10.0));
-                        let go = button(ui, ui.id().with("skin-check"), rect, &style).clicked()
-                            || (response.lost_focus()
-                                && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-                        if go {
-                            Some(true)
-                        } else {
-                            None
-                        }
-                    });
-                    if let Some(true) = enter {
-                        self.check_skin();
+                    } else if value != app.state.settings.skin_name {
+                        app.state.settings.skin_name = value;
+                        app.state.save();
                     }
-
-                    let shown = self.state.settings.skin == "tlauncher";
-                    let status = self.skin_status.clone();
-                    if shown && !status.is_empty() {
-                        self.settings_row(ui, width, "Skin", |ui, app| {
-                            let busy = app.skins.busy;
-                            let colour = if busy || app.skin.is_none() {
-                                MUTED
-                            } else {
-                                crate::theme::GREEN
-                            };
-                            let w = ui.available_width().min(520.0);
-                            let (rect, _) =
-                                ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::hover());
-                            let galley = ui.ctx().fonts(|f| {
-                                f.layout(
-                                    status.clone(),
-                                    regular(13.0),
-                                    colour,
-                                    rect.width(),
-                                )
-                            });
-                            ui.painter().galley(
-                                Pos2::new(rect.min.x, rect.center().y - galley.size().y / 2.0),
-                                galley,
-                                colour,
-                            );
-                            None::<u32>
-                        });
+                    let style = Button::ghost(label).font(bold(10.0));
+                    let go = button(ui, ui.id().with("skin-check"), rect, &style).clicked()
+                        || (response.lost_focus()
+                            && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                    if go {
+                        Some(true)
+                    } else {
+                        None
                     }
+                });
+                if let Some(true) = enter {
+                    self.check_skin();
                 }
 
-                let connect = if self.state.settings.skin == "tlauncher" {
-                    None
-                } else {
-                    self.settings_row(ui, width, "Account", |ui, app| {
-                    let label = match app.state.settings.account.clone() {
-                        Some(who) => format!("Connected as {who}"),
-                        None => match app.state.settings.skin.as_str() {
-                            "microsoft" => "Microsoft account".to_string(),
-                            "tlauncher" => "TLauncher account".to_string(),
-                            _ => "Local skin file".to_string(),
-                        },
+                // what the source answered
+                let status = self.skin_status.clone();
+                if !status.is_empty() {
+                    self.settings_row(ui, width, "Skin", |ui, app| {
+                        let busy = app.skins.busy;
+                        let colour = if busy || app.skin.is_none() {
+                            MUTED
+                        } else {
+                            crate::theme::GREEN
+                        };
+                        let w = ui.available_width().min(560.0).max(160.0);
+                        let (rect, _) =
+                            ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::hover());
+                        let galley = ui.ctx().fonts(|f| {
+                            f.layout(
+                                status.clone(),
+                                regular(13.0),
+                                colour,
+                                rect.width(),
+                            )
+                        });
+                        ui.painter().galley(
+                            Pos2::new(rect.min.x, rect.center().y - galley.size().y / 2.0),
+                            galley,
+                            colour,
+                        );
+                        None::<u32>
+                    });
+                }
+
+                // the half that reaches the game: a Yggdrasil service of our
+                // own, and the agent that points the game at it
+                let copied = self.settings_row(ui, width, "In game", |ui, app| {
+                    let note = match app.skin_server_port() {
+                        Some(port) => {
+                            let agent = match app.injector.as_ref() {
+                                Some(_) => "authlib-injector ready".to_string(),
+                                None => "fetching authlib-injector…".to_string(),
+                            };
+                            format!("Skin served on 127.0.0.1:{port} — {agent}")
+                        }
+                        None => "No skin yet, the game keeps the default.".to_string(),
                     };
-                    path_chip(ui, &label);
-                    let connected = app.state.settings.account.is_some();
-                    let local = app.state.settings.skin == "local";
-                    let text = if connected { "DISCONNECT" } else { "CONNECT" };
-                    let w = text_width(ui.ctx(), text, &bold(10.0)) + 20.0;
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
-                    let style = Button::ghost(text).font(bold(10.0));
-                    if !local
-                        && button(ui, ui.id().with("skin-connect"), rect, &style).clicked()
-                    {
+                    let colour = if app.skin_server_port().is_some() {
+                        crate::theme::GREEN
+                    } else {
+                        MUTED
+                    };
+                    let w = ui.available_width().min(560.0).max(160.0);
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::hover());
+                    let galley = ui.ctx().fonts(|f| {
+                        f.layout(note.clone(), regular(13.0), colour, rect.width())
+                    });
+                    ui.painter().galley(
+                        Pos2::new(rect.min.x, rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        colour,
+                    );
+                    if app.skin_server_port().is_none() {
+                        return None;
+                    }
+                    let w = text_width(ui.ctx(), "COPY ARGS", &bold(10.0)) + 24.0;
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
+                    let style = Button::ghost("COPY ARGS").font(bold(10.0));
+                    if button(ui, ui.id().with("skin-args"), rect, &style).clicked() {
                         return Some(true);
                     }
-                        None
-                    })
-                };
-                if let Some(true) = connect {
-                    if self.state.settings.account.is_some() {
-                        self.state.settings.account = None;
+                    None
+                });
+                if let Some(true) = copied {
+                    let args = self.skin_launch_args().join(" ");
+                    if args.is_empty() {
+                        self.state.flash("Nothing to copy yet.");
                     } else {
-                        self.state.settings.account = Some(if self.state.settings.skin == "microsoft" {
-                            "Obsifox".into()
-                        } else {
-                            "Obsifox_TL".into()
-                        });
+                        ui.ctx().copy_text(args);
+                        self.state.flash("Launch arguments copied.");
                     }
-                    self.state.save();
                 }
 
                 let clicked = self.settings_row(ui, width, "CurseForge API key", |ui, app| {

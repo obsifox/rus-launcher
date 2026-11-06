@@ -757,12 +757,15 @@ fn urlencode(value: &str) -> String {
 
 /* ------------------------------------------------------------------ skins */
 
-/// A skin a player uploaded to TLauncher.
+/// A skin a player wears, wherever it was uploaded.
 #[derive(Clone)]
 pub struct Skin {
     pub url: String,
     /// "classic" or "slim", the two arm widths TLauncher reports.
     pub model: String,
+    /// The player the skin belongs to, and the uuid the game knows them by.
+    pub name: String,
+    pub uuid: String,
     pub bytes: Vec<u8>,
     /// Size of the picture as it came in, before the cache scales it.
     pub width: u32,
@@ -785,22 +788,28 @@ impl Default for Skins {
 }
 
 impl Skins {
-    /// Asks TLauncher what `nickname` is wearing.
-    pub fn check(&mut self, nickname: &str) {
+    /// Asks the chosen source what `nickname` is wearing.
+    pub fn check(&mut self, source: &str, nickname: &str) {
         if self.busy || nickname.trim().is_empty() {
             return;
         }
         let (tx, rx) = channel();
         self.rx = Some(rx);
         self.busy = true;
+        let source = source.to_string();
         let nickname = nickname.trim().to_string();
         std::thread::spawn(move || {
-            let _ = tx.send(tlauncher_skin(&nickname));
+            let out = if source == "microsoft" {
+                mojang_skin(&nickname)
+            } else {
+                tlauncher_skin(&nickname)
+            };
+            let _ = tx.send(out);
         });
     }
 
     /// Downloads a skin whose address we already know, after a restart.
-    pub fn load(&mut self, url: &str, model: &str) {
+    pub fn load(&mut self, url: &str, model: &str, name: &str, uuid: &str) {
         if self.busy || url.is_empty() {
             return;
         }
@@ -809,8 +818,10 @@ impl Skins {
         self.busy = true;
         let url = url.to_string();
         let model = model.to_string();
+        let name = name.to_string();
+        let uuid = uuid.to_string();
         std::thread::spawn(move || {
-            let _ = tx.send(skin_at(&url, &model));
+            let _ = tx.send(skin_at(&url, &model, &name, &uuid));
         });
     }
 
@@ -857,10 +868,93 @@ fn tlauncher_skin(nickname: &str) -> Result<Option<Skin>, String> {
         .and_then(|value| value.as_str())
         .unwrap_or("classic")
         .to_string();
-    skin_at(&file, &model)
+    skin_at(
+        &file,
+        &model,
+        nickname,
+        &crate::skin::offline_uuid(nickname),
+    )
 }
 
-fn skin_at(url: &str, model: &str) -> Result<Option<Skin>, String> {
+/// The skin a real Minecraft account wears, read the way the game reads it:
+/// a name becomes a uuid, and the uuid carries the textures.
+fn mojang_skin(nickname: &str) -> Result<Option<Skin>, String> {
+    let lookup = format!(
+        "https://api.mojang.com/users/profiles/minecraft/{}",
+        urlencode(nickname)
+    );
+    let mut body = get(&lookup, None)?;
+    let found: serde_json::Value = body
+        .read_json()
+        .map_err(|_| "Minecraft sent something we could not read.".to_string())?;
+    let uuid = found
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let name = found
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or(nickname)
+        .to_string();
+    if uuid.is_empty() {
+        return Err(format!("{nickname} is not a Minecraft account."));
+    }
+    let url = format!("https://sessionserver.mojang.com/session/minecraft/profile/{uuid}");
+    let mut body = get(&url, None)?;
+    let profile: serde_json::Value = body
+        .read_json()
+        .map_err(|_| "Minecraft sent something we could not read.".to_string())?;
+    let encoded = profile
+        .get("properties")
+        .and_then(|value| value.as_array())
+        .and_then(|list| {
+            list.iter()
+                .find(|entry| entry.get("name").and_then(|v| v.as_str()) == Some("textures"))
+        })
+        .and_then(|entry| entry.get("value"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if encoded.is_empty() {
+        return Ok(None);
+    }
+    use base64::Engine as _;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .map_err(|_| "Minecraft sent a skin we could not open.".to_string())?;
+    let textures: serde_json::Value = serde_json::from_slice(&decoded)
+        .map_err(|_| "Minecraft sent a skin we could not read.".to_string())?;
+    let skin = &textures["textures"]["SKIN"];
+    let mut file = skin
+        .get("url")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if file.is_empty() {
+        return Ok(None);
+    }
+    if let Some(rest) = file.strip_prefix("http://") {
+        file = format!("https://{rest}");
+    }
+    let model = skin
+        .get("metadata")
+        .and_then(|value| value.get("model"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("classic")
+        .to_string();
+    skin_at(&file, &model, &name, &uuid)
+}
+
+/// authlib-injector is about a megabyte, too big for the icon deadline.
+pub fn download(url: &str) -> Option<Vec<u8>> {
+    let mut body = get(url, None).ok()?;
+    let mut out = Vec::new();
+    body.as_reader().read_to_end(&mut out).ok()?;
+    Some(out)
+}
+
+fn skin_at(url: &str, model: &str, name: &str, uuid: &str) -> Result<Option<Skin>, String> {
     let bytes = bytes(url).ok_or_else(|| "The skin picture would not download.".to_string())?;
     if bytes.is_empty() {
         return Ok(None);
@@ -871,6 +965,8 @@ fn skin_at(url: &str, model: &str) -> Result<Option<Skin>, String> {
     Ok(Some(Skin {
         url: url.to_string(),
         model: model.to_string(),
+        name: name.to_string(),
+        uuid: uuid.to_string(),
         bytes,
         width,
         height,

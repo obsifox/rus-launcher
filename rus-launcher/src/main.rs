@@ -5,10 +5,13 @@ mod data;
 mod modal;
 mod net;
 mod pages;
+mod skin;
 mod shell;
 mod theme;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,9 +36,15 @@ pub struct App {
     deps: net::Deps,
     icons: net::Icons,
     skins: net::Skins,
-    /// The skin the player wears, once TLauncher has confirmed it.
+    /// The skin the player wears, once the chosen source has confirmed it.
     pub skin: Option<net::Skin>,
     pub skin_status: String,
+    /// The little Yggdrasil service that carries the skin into the game.
+    skin_server: Option<skin::Server>,
+    /// authlib-injector, fetched the first time the game needs it.
+    injector: Option<PathBuf>,
+    injector_rx: Option<std::sync::mpsc::Receiver<Option<PathBuf>>>,
+    pub injector_status: String,
     /// Which drawer the running dependency lookup belongs to.
     deps_kind: crate::data::Kind,
     /// True when the running lookup should ask before it installs.
@@ -71,6 +80,10 @@ impl App {
             skins: net::Skins::default(),
             skin: None,
             skin_status: String::new(),
+            skin_server: None,
+            injector: None,
+            injector_rx: None,
+            injector_status: String::new(),
             deps_kind: crate::data::Kind::Mods,
             deps_ask: false,
             dep_queue: Vec::new(),
@@ -90,7 +103,11 @@ impl App {
     /// A skin saved by an earlier session is only an address, so the picture
     /// comes down again in the background while the launcher opens.
     fn restore_skin(&mut self) {
-        if self.state.settings.skin != "tlauncher" {
+        if self.state.settings.skin == "local" {
+            let path = self.state.settings.skin_local.clone();
+            if !path.is_empty() {
+                self.use_local_skin(&path);
+            }
             return;
         }
         let url = self.state.settings.skin_url.clone();
@@ -98,8 +115,19 @@ impl App {
             return;
         }
         let model = self.state.settings.skin_model.clone();
+        let name = self
+            .state
+            .settings
+            .account
+            .clone()
+            .unwrap_or_else(|| "Player".to_string());
+        let uuid = if self.state.settings.skin_uuid.is_empty() {
+            skin::offline_uuid(&name)
+        } else {
+            self.state.settings.skin_uuid.clone()
+        };
         self.skin_status = "Fetching the saved skin…".to_string();
-        self.skins.load(&url, &model);
+        self.skins.load(&url, &model, &name, &uuid);
     }
 
     fn set_page(&mut self, page: Page) {
@@ -349,16 +377,28 @@ impl App {
                     if !name.is_empty() {
                         self.state.settings.account = Some(name.clone());
                     }
+                    let where_from = if self.state.settings.skin == "microsoft" {
+                        "Minecraft"
+                    } else {
+                        "TLauncher"
+                    };
                     self.skin_status = match self.state.settings.account.clone() {
-                        Some(who) => format!("{who} wears a {model} skin from TLauncher."),
-                        None => format!("A {model} skin came down from TLauncher."),
+                        Some(who) => format!("{who} wears a {model} skin from {where_from}."),
+                        None => format!("A {model} skin came down from {where_from}."),
+                    };
+                    self.state.settings.skin_uuid = skin.uuid.clone();
+                    let worn = skin::Skin {
+                        bytes: skin.bytes.clone(),
+                        model: model.to_string(),
                     };
                     self.skin = Some(skin);
+                    self.wear_skin(Some(worn));
                     self.state.save();
                 }
                 Ok(None) => {
                     let who = self.state.settings.skin_name.trim().to_string();
                     self.skin = None;
+                    self.wear_skin(None);
                     self.state.settings.account = None;
                     self.state.settings.skin_url.clear();
                     self.state.settings.skin_model.clear();
@@ -374,15 +414,157 @@ impl App {
         }
     }
 
-    /// Asks TLauncher what the typed nickname is wearing.
+    /// Asks the chosen source what the typed name is wearing.
     pub fn check_skin(&mut self) {
-        let name = self.state.settings.skin_name.trim().to_string();
+        let source = self.state.settings.skin.clone();
+        let name = if source == "local" {
+            self.state.settings.skin_local.trim().to_string()
+        } else {
+            self.state.settings.skin_name.trim().to_string()
+        };
+        if source == "local" {
+            self.use_local_skin(&name);
+            return;
+        }
         if name.is_empty() {
             self.skin_status = "Type the nickname first.".to_string();
             return;
         }
-        self.skin_status = format!("Looking {name} up on TLauncher…");
-        self.skins.check(&name);
+        let where_from = if source == "microsoft" {
+            "Minecraft"
+        } else {
+            "TLauncher"
+        };
+        self.skin_status = format!("Looking {name} up on {where_from}…");
+        self.skins.check(&source, &name);
+    }
+
+    /// A skin picked straight off the disk, no service involved.
+    pub fn use_local_skin(&mut self, path: &str) {
+        let file = path.trim().trim_matches('"');
+        if file.is_empty() {
+            self.skin_status = "Point to a skin file first.".to_string();
+            return;
+        }
+        match std::fs::read(file) {
+            Ok(bytes) => {
+                let name = self
+                    .state
+                    .settings
+                    .skin_name
+                    .trim()
+                    .to_string();
+                let name = if name.is_empty() { "Player".to_string() } else { name };
+                let uuid = skin::offline_uuid(&name);
+                let name = std::path::Path::new(file)
+                    .file_stem()
+                    .map(|value| value.to_string_lossy().to_string())
+                    .unwrap_or(name);
+                let who = name.clone();
+                self.state.settings.skin_local = file.to_string();
+                self.state.settings.account = Some(who.clone());
+                self.state.settings.skin_url = String::new();
+                self.state.settings.skin_model = "default".to_string();
+                self.state.settings.skin_uuid = uuid.clone();
+                self.skin_status = format!("{who} wears the skin on disk.");
+                let worn = skin::Skin {
+                    bytes: bytes.clone(),
+                    model: "default".to_string(),
+                };
+                self.skin = Some(net::Skin {
+                    url: file.to_string(),
+                    model: "classic".to_string(),
+                    name: who,
+                    uuid,
+                    bytes,
+                    width: 64,
+                    height: 64,
+                });
+                self.wear_skin(Some(worn));
+                self.state.save();
+            }
+            Err(_) => self.skin_status = format!("{file} is not a picture we can read."),
+        }
+    }
+
+    /// Hands the skin to the local service, starting it on the first call.
+    /// From here the game can wear it without a mod, whatever it runs.
+    fn wear_skin(&mut self, worn: Option<skin::Skin>) {
+        let (name, uuid) = match self.skin.as_ref() {
+            Some(skin) => (skin.name.clone(), skin.uuid.clone()),
+            None => ("Player".to_string(), skin::offline_uuid("Player")),
+        };
+        match self.skin_server.as_ref() {
+            Some(server) => {
+                server.set_profile(&name, &uuid);
+                server.set_skin(worn);
+            }
+            None => {
+                if let Some(dir) = State::path() {
+                    let profile = skin::Profile {
+                        name,
+                        uuid,
+                        skin: worn,
+                    };
+                    self.skin_server = skin::Server::start(&dir, profile);
+                }
+            }
+        }
+        self.ensure_injector();
+    }
+
+    /// Fetches authlib-injector once, then keeps it beside the state file.
+    fn ensure_injector(&mut self) {
+        if self.injector.is_some() || self.injector_rx.is_some() {
+            return;
+        }
+        let Some(dir) = State::path() else {
+            return;
+        };
+        let (tx, rx) = channel();
+        self.injector_rx = Some(rx);
+        self.injector_status = "Fetching authlib-injector…".to_string();
+        std::thread::spawn(move || {
+            let _ = tx.send(injector_jar(&dir));
+        });
+    }
+
+    pub fn skin_server_port(&self) -> Option<u16> {
+        self.skin_server.as_ref().map(|server| server.port())
+    }
+
+    /// Everything the game needs to wear the skin: the offline profile, the
+    /// agent and the prefetched metadata. Empty until a skin is being served.
+    pub fn skin_launch_args(&self) -> Vec<String> {
+        let Some(server) = self.skin_server.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = server.game_args();
+        if let Some(jar) = self.injector.as_ref() {
+            out.extend(server.jvm_args(jar));
+        }
+        out
+    }
+
+    /// Collects authlib-injector when the download answers.
+    fn collect_injector(&mut self) {
+        let Some(rx) = self.injector_rx.as_ref() else {
+            return;
+        };
+        let got = rx.try_recv().ok();
+        if got.is_none() {
+            return;
+        }
+        self.injector_rx = None;
+        match got.flatten() {
+            Some(path) => {
+                self.injector_status = format!("authlib-injector ready ({})", path.display());
+                self.injector = Some(path);
+            }
+            None => self.injector_status =
+                "authlib-injector could not be downloaded; the skin stays in the launcher."
+                    .to_string(),
+        }
     }
 
     /// Runs the next waiting dependency lookup, if any.
@@ -428,6 +610,7 @@ impl eframe::App for App {
         self.search.poll();
         self.updates.poll(&mut self.state);
         self.apply_lookups();
+        self.collect_injector();
         self.drain_dep_queue();
 
         // Pages fade in, buttons flash their confirmation label and the Modrinth
@@ -441,6 +624,7 @@ impl eframe::App for App {
             || self.details.busy
             || self.deps.busy
             || self.skins.busy
+            || self.injector_rx.is_some()
             || self.icons.waiting()
             || self.state.flash_text().is_some()
             || animating
@@ -574,4 +758,20 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
+}
+
+/// authlib-injector is what points the game at our own service. It comes from
+/// the project's own download API and stays beside the state file afterwards.
+fn injector_jar(dir: &std::path::Path) -> Option<PathBuf> {
+    let path = dir.join("authlib-injector.jar");
+    if path.is_file() {
+        return Some(path);
+    }
+    let latest = net::download("https://authlib-injector.yushi.moe/artifact/latest.json")?;
+    let info: serde_json::Value = serde_json::from_slice(&latest).ok()?;
+    let url = info.get("download_url").and_then(|value| value.as_str())?;
+    let bytes = net::download(url)?;
+    let _ = std::fs::create_dir_all(dir);
+    std::fs::write(&path, &bytes).ok()?;
+    Some(path)
 }
