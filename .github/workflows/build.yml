@@ -21,25 +21,25 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            gate-install
+            rus-launcher
 
       - name: Build Gate Install
         working-directory: gate-install
         run: cargo build --release
 
       - name: Build the launcher
-        shell: bash
-        run: |
-          mkdir -p rus-launcher-shell/assets/launcher
-          cp -r launcher/index.html launcher/icons launcher/posters launcher/tabs launcher/fonts launcher/brand rus-launcher-shell/assets/launcher/
-          cd rus-launcher-shell
-          cargo build --release
+        working-directory: rus-launcher
+        run: cargo build --release
 
       - name: Package
         shell: bash
         run: |
           mkdir -p dist
           cp gate-install/target/release/gate-install.exe dist/gate-install-windows-x86_64.exe
-          cp rus-launcher-shell/target/release/rus-launcher-shell.exe dist/rus-launcher-windows-x86_64.exe
+          cp rus-launcher/target/release/rus-launcher.exe dist/rus-launcher-windows-x86_64.exe
           ls -l dist
 
       - uses: actions/upload-artifact@v4
@@ -63,6 +63,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            gate-install
+            rus-launcher
 
       - name: Build Gate Install
         working-directory: gate-install
@@ -71,24 +75,26 @@ jobs:
       - name: System libraries
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+          sudo apt-get install -y \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libgl1-mesa-dev libgtk-3-dev
 
       - name: Build the launcher
-        run: |
-          mkdir -p rus-launcher-shell/assets/launcher
-          cp -r launcher/index.html launcher/icons launcher/posters launcher/tabs launcher/fonts launcher/brand rus-launcher-shell/assets/launcher/
-          cd rus-launcher-shell
-          cargo build --release
-          cp target/release/rus-launcher-shell target/release/rus-launcher-shell-native
-          cargo build --release --no-default-features
-          cp target/release/rus-launcher-shell target/release/rus-launcher-shell-browser
+        working-directory: rus-launcher
+        run: cargo build --release
 
       - name: AppImage
         run: |
           set -e
           mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/256x256/apps
-          cp rus-launcher-shell/target/release/rus-launcher-shell-native AppDir/usr/bin/rus-launcher-shell
-          cp rus-launcher-shell/target/release/rus-launcher-shell-browser AppDir/usr/bin/rus-launcher-shell-browser
+
+          # the native build is the launcher; the web build rides along as a
+          # fallback for machines that cannot open an OpenGL window.
+          cp rus-launcher/target/release/rus-launcher AppDir/usr/bin/rus-launcher
+          mkdir -p AppDir/usr/share/rus-launcher
+          cp -r launcher AppDir/usr/share/rus-launcher/web
+
           cp launcher/brand/mark.png AppDir/usr/share/icons/hicolor/256x256/apps/rus-launcher.png
           cp launcher/brand/mark.png AppDir/rus-launcher.png
           cat > AppDir/rus-launcher.desktop <<'EOF'
@@ -96,7 +102,7 @@ jobs:
           Type=Application
           Name=Rus Launcher
           Comment=Game launcher by Obsifox Studio
-          Exec=rus-launcher-shell
+          Exec=rus-launcher
           Icon=rus-launcher
           Categories=Game;Utility;
           Terminal=false
@@ -105,12 +111,13 @@ jobs:
           #!/bin/sh
           SELF=$(dirname "$(readlink -f "$0")")
           APPDIR="${APPDIR:-$SELF}"
-          # the window build needs webkit2gtk; without it, open in the browser
-          if ldconfig -p 2>/dev/null | grep -q libwebkit2gtk-4.1; then
-            exec "$APPDIR/usr/bin/rus-launcher-shell" "$@"
-          else
-            exec "$APPDIR/usr/bin/rus-launcher-shell-browser" "$@"
+          "$APPDIR/usr/bin/rus-launcher" "$@"
+          status=$?
+          # nothing could be drawn: fall back to the web build in a browser
+          if [ "$status" -ne 0 ]; then
+            xdg-open "$APPDIR/usr/share/rus-launcher/web/index.html" >/dev/null 2>&1 &
           fi
+          exit "$status"
           EOF
           chmod +x AppDir/AppRun
           curl -fsSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage

@@ -3,6 +3,7 @@ release/
 gate-install/target/
 
 # scratch renders
+launcher/html-*.png
 launcher/screenshot*.png
 launcher/cards.png
 launcher/tabs-strip.png
@@ -12,4 +13,4 @@ install/preview.png
 install/scene.png
 __pycache__/
 gate-install/assets/scene.png
-rus-launcher-shell/assets/
+rus-launcher/target/
