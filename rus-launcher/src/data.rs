@@ -132,6 +132,10 @@ pub struct Entry {
     pub version: Option<String>,
     pub enabled: bool,
     pub source: String,
+    /// One line about the item, shown under its name.
+    pub description: Option<String>,
+    /// Icon address. The pixels are fetched in the background and cached by URL.
+    pub icon: Option<String>,
 }
 
 /// The four drawers of the Directory.
@@ -164,6 +168,26 @@ impl Kind {
         }
     }
 
+    /// The name used in the save file.
+    pub fn key(self) -> &'static str {
+        match self {
+            Kind::Mods => "mods",
+            Kind::ResourcePacks => "resourcepacks",
+            Kind::ShaderPacks => "shaderpacks",
+            Kind::Servers => "servers",
+        }
+    }
+
+    /// The value Modrinth uses for this kind of project.
+    pub fn facet(self) -> &'static str {
+        match self {
+            Kind::Mods => "mod",
+            Kind::ResourcePacks => "resourcepack",
+            Kind::ShaderPacks => "shader",
+            Kind::Servers => "mod",
+        }
+    }
+
     pub fn empty(self) -> &'static str {
         match self {
             Kind::Mods => "No mods here yet. Add them from the Mods page or by hand.",
@@ -182,7 +206,34 @@ impl Entry {
             version: None,
             enabled: true,
             source: "local".into(),
+            description: None,
+            icon: None,
         }
+    }
+
+    /// An entry built from what a service told us about a project.
+    pub fn found(name: &str, slug: &str, description: &str, icon: Option<String>) -> Self {
+        Self {
+            name: name.to_string(),
+            slug: Some(slug.to_string()),
+            version: None,
+            enabled: true,
+            source: "modrinth".into(),
+            description: Some(description.to_string()),
+            icon,
+        }
+    }
+
+    /// Dependencies install themselves, so they are marked as such.
+    pub fn dependency(name: &str, slug: &str, description: &str, icon: Option<String>) -> Self {
+        Self {
+            source: "dependency".into(),
+            ..Self::found(name, slug, description, icon)
+        }
+    }
+
+    pub fn summary(&self) -> String {
+        self.description.clone().unwrap_or_default()
     }
 }
 
@@ -198,6 +249,11 @@ pub struct Instance {
     pub resourcepacks: Vec<Entry>,
     pub shaderpacks: Vec<Entry>,
     pub servers: Vec<Server>,
+    /// Optional dependencies offered after the last install.
+    pub offers: Vec<Entry>,
+    /// Drawer name the offers belong to, and the project they came from.
+    pub offers_kind: String,
+    pub offers_for: String,
 }
 
 impl Instance {
@@ -314,6 +370,10 @@ impl State {
                 version: Some("mc1.21-0.6.13".into()),
                 enabled: true,
                 source: "modrinth".into(),
+                description: Some(
+                    "A rendering rewrite for Fabric and NeoForge that lifts frame rates.".into(),
+                ),
+                icon: None,
             },
             Entry {
                 name: "Iris Shaders".into(),
@@ -321,6 +381,10 @@ impl State {
                 version: None,
                 enabled: true,
                 source: "modrinth".into(),
+                description: Some(
+                    "Shader support for Fabric that runs most OptiFine shader packs.".into(),
+                ),
+                icon: None,
             },
             Entry {
                 name: "JEI".into(),
@@ -328,10 +392,26 @@ impl State {
                 version: None,
                 enabled: false,
                 source: "local".into(),
+                description: Some(
+                    "Lists every item and recipe so you can look them up while playing.".into(),
+                ),
+                icon: None,
             },
         ];
-        pack.resourcepacks = vec![Entry::new("Faithful 64x"), Entry::new("Vanilla Tweaks")];
-        pack.shaderpacks = vec![Entry::new("Complementary Reimagined")];
+        pack.resourcepacks = vec![
+            Entry {
+                description: Some("The classic Faithful look, redrawn at 64x.".into()),
+                ..Entry::new("Faithful 64x")
+            },
+            Entry {
+                description: Some("Small optional tweaks that keep the vanilla look.".into()),
+                ..Entry::new("Vanilla Tweaks")
+            },
+        ];
+        pack.shaderpacks = vec![Entry {
+            description: Some("A soft, cinematic shader pack that stays close to vanilla.".into()),
+            ..Entry::new("Complementary Reimagined")
+        }];
         self.instance_mut(legacy).servers.push(Server {
             name: "Legacy Realm".into(),
             address: "play.legacy.net".into(),
@@ -357,6 +437,9 @@ impl State {
             resourcepacks: Vec::new(),
             shaderpacks: Vec::new(),
             servers: Vec::new(),
+            offers: Vec::new(),
+            offers_kind: String::new(),
+            offers_for: String::new(),
         });
         id
     }
@@ -443,6 +526,9 @@ impl State {
         cloned.resourcepacks = source.resourcepacks.clone();
         cloned.shaderpacks = source.shaderpacks.clone();
         cloned.servers = source.servers.clone();
+        cloned.offers = source.offers.clone();
+        cloned.offers_kind = source.offers_kind.clone();
+        cloned.offers_for = source.offers_for.clone();
         self.current = copy;
         let original = source.name.clone();
         self.flash(format!("{original} duplicated as {name}."));
@@ -513,6 +599,9 @@ impl State {
                     "resourcepacks": entries_json(&i.resourcepacks),
                     "shaderpacks": entries_json(&i.shaderpacks),
                     "servers": i.servers.iter().map(|s| serde_json::json!({"name": s.name, "address": s.address, "enabled": s.enabled})).collect::<Vec<_>>(),
+                    "offers": entries_json(&i.offers),
+                    "offers_kind": i.offers_kind,
+                    "offers_for": i.offers_for,
                 })
             })
             .collect();
@@ -601,6 +690,21 @@ impl State {
                                 .collect()
                         })
                         .unwrap_or_default();
+                    let offers = item
+                        .get("offers")
+                        .and_then(|v| v.as_array())
+                        .map(|list| entries_from(list))
+                        .unwrap_or_default();
+                    let offers_kind = item
+                        .get("offers_kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let offers_for = item
+                        .get("offers_for")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     self.next_id = self.next_id.max(id + 1);
                     self.instances.push(Instance {
                         id,
@@ -613,6 +717,9 @@ impl State {
                         resourcepacks,
                         shaderpacks,
                         servers,
+                        offers,
+                        offers_kind,
+                        offers_for,
                     });
                 }
                 ok = true;
@@ -679,6 +786,8 @@ fn entries_json(list: &[Entry]) -> Vec<serde_json::Value> {
                 "version": e.version,
                 "enabled": e.enabled,
                 "source": e.source,
+                "description": e.description,
+                "icon": e.icon,
             })
         })
         .collect()
@@ -711,6 +820,14 @@ fn entries_from(list: &[serde_json::Value]) -> Vec<Entry> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("local")
                     .to_string(),
+                description: item
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                icon: item
+                    .get("icon")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             }
         })
         .collect()

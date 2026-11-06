@@ -894,18 +894,39 @@ impl App {
         let style = Button::ghost(label).font(bold(10.0)).on(hit.added);
         if button(ui, ui.id().with("hit-add").with(slot).with(&hit.title), btn, &style).clicked() {
             let title = hit.title.clone();
-            let instance = self.state.current_instance_mut();
-            if !instance.mods.iter().any(|m| m.name == title) {
-                instance.mods.push(crate::data::Entry {
-                    name: title.clone(),
-                    slug: hit.slug.clone(),
-                    version: hit.version.clone(),
-                    enabled: true,
-                    source: self.search.source.clone(),
-                });
+            let description = hit.description.clone();
+            let icon = hit.icon_url.clone();
+            let slug = hit.slug.clone();
+            let source = self.search.source.clone();
+            let version = hit.version.clone();
+            let mut added = false;
+            {
+                let instance = self.state.current_instance_mut();
+                if !instance.mods.iter().any(|m| m.name == title) {
+                    instance.mods.push(crate::data::Entry {
+                        name: title.clone(),
+                        slug: slug.clone(),
+                        version,
+                        enabled: true,
+                        source,
+                        description: Some(description),
+                        icon,
+                    });
+                    added = true;
+                }
             }
             if let Some(found) = self.search.results.iter_mut().find(|h| h.title == title) {
                 found.added = true;
+            }
+            if added {
+                match slug {
+                    Some(value) => {
+                        self.fetch_deps(&value, &title, crate::data::Kind::Mods);
+                        self.state
+                            .flash(format!("{title} added. Looking for dependencies…"));
+                    }
+                    None => self.state.flash(format!("{title} added.")),
+                }
             }
             self.state.save();
         }
@@ -1018,6 +1039,7 @@ impl App {
                 if address != self.dir_address {
                     self.dir_address = address;
                 }
+                let mut lookup: Option<(String, Kind)> = None;
                 let add_label = "ADD";
                 let w = text_width(ui.ctx(), add_label, &bold(12.0)) + 32.0;
                 let add_rect = Rect::from_min_size(Pos2::new(x, row.min.y + 1.0), Vec2::new(w, 34.0));
@@ -1042,15 +1064,28 @@ impl App {
                                 }
                             }
                             other => {
-                                if let Some(list) = instance.entries_mut(other) {
+                                let known = instance
+                                    .entries(other)
+                                    .iter()
+                                    .any(|e| e.name.to_lowercase() == name.to_lowercase());
+                                if known {
+                                    self.state
+                                        .flash(format!("{name} is already in this instance."));
+                                } else if let Some(list) = instance.entries_mut(other) {
                                     list.push(crate::data::Entry::new(name.clone()));
                                     self.dir_name.clear();
-                                    self.state.flash(format!("{name} added."));
+                                    self.state.flash(format!("{name} added. Looking it up…"));
+                                    lookup = Some((name.clone(), other));
                                 }
                             }
                         }
                         self.state.save();
                     }
+                }
+
+                if let Some((name, kind)) = lookup {
+                    self.look_up(&name, kind);
+                    self.deps_kind = kind;
                 }
 
                 if let Some(text) = self.state.flash_text().map(|s| s.to_string()) {
@@ -1060,59 +1095,166 @@ impl App {
 
                 // rows
                 ui.add_space(14.0);
-                let entries: Vec<(String, Option<String>, bool, Option<String>)> = match kind {
+                struct Row {
+                    name: String,
+                    meta: Option<String>,
+                    enabled: bool,
+                    slug: Option<String>,
+                    description: String,
+                    icon: Option<String>,
+                    auto: bool,
+                }
+                let rows: Vec<Row> = match kind {
                     Kind::Servers => instance
                         .servers
                         .iter()
-                        .map(|s| (s.name.clone(), Some(s.address.clone()), s.enabled, None))
+                        .map(|s| Row {
+                            name: s.name.clone(),
+                            meta: Some(s.address.clone()),
+                            enabled: s.enabled,
+                            slug: None,
+                            description: String::new(),
+                            icon: None,
+                            auto: false,
+                        })
                         .collect(),
                     other => instance
                         .entries(other)
                         .iter()
-                        .map(|e| (e.name.clone(), e.version.clone(), e.enabled, e.slug.clone()))
+                        .map(|e| Row {
+                            name: e.name.clone(),
+                            meta: e.version.clone(),
+                            enabled: e.enabled,
+                            slug: e.slug.clone(),
+                            description: e.summary(),
+                            icon: e.icon.clone(),
+                            auto: e.source == "dependency",
+                        })
                         .collect(),
                 };
-                if entries.is_empty() {
+                let tall = kind != Kind::Servers;
+                let row_h = if tall { 62.0 } else { 44.0 };
+                // Items from an older save have a slug but no text yet: top them up.
+                if tall {
+                    if let Some(row) = rows
+                        .iter()
+                        .find(|row| row.slug.is_some() && row.description.is_empty())
+                    {
+                        if let Some(slug) = row.slug.clone() {
+                            self.fill_in(&row.name, &slug);
+                        }
+                    }
+                }
+                if rows.is_empty() {
                     note(ui, kind.empty());
                 } else {
-                    for (index, (name, meta, enabled, slug)) in entries.iter().enumerate() {
+                    for (index, row) in rows.iter().enumerate() {
                         let (rect, _) = ui.allocate_exact_size(
-                            Vec2::new(ui.available_width() - 56.0, 44.0),
+                            Vec2::new(ui.available_width() - 56.0, row_h),
                             Sense::hover(),
                         );
                         let item = Rect::from_min_max(
                             Pos2::new(rect.min.x + 28.0, rect.min.y),
-                            Pos2::new(rect.max.x - 28.0, rect.min.y + 44.0),
+                            Pos2::new(rect.max.x - 28.0, rect.min.y + row_h),
                         );
                         ui.painter().rect_filled(item, CornerRadius::same(RADIUS), CARD);
+                        let clipped = ui.painter().with_clip_rect(item);
 
                         let sw = Rect::from_min_size(
                             Pos2::new(item.min.x + 12.0, item.center().y - 9.0),
                             Vec2::new(34.0, 18.0),
                         );
-                        if switch(ui, ui.id().with("dir-sw").with(index), sw, *enabled) {
+                        if switch(ui, ui.id().with("dir-sw").with(index), sw, row.enabled) {
                             self.toggle_entry(kind, index);
                         }
 
-                        let label = match (kind, meta) {
-                            (Kind::Servers, Some(address)) => format!("{name} · {address}"),
-                            (_, Some(version)) => format!("{name} · {version}"),
-                            _ => name.clone(),
+                        let mut text_x = item.min.x + 60.0;
+                        if tall {
+                            let icon_rect = Rect::from_min_size(
+                                Pos2::new(item.min.x + 56.0, item.center().y - 20.0),
+                                Vec2::new(40.0, 40.0),
+                            );
+                            let texture = match row.icon.clone() {
+                                Some(url) => match self.icons.get(&url).cloned() {
+                                    Some(pixels) => self.assets.store(&ctx, &url, &pixels),
+                                    None => {
+                                        self.icons.want(&url);
+                                        None
+                                    }
+                                },
+                                None => None,
+                            };
+                            let texture =
+                                texture.or_else(|| self.assets.id(&ctx, "brand/mark.png"));
+                            if let Some(texture) = texture {
+                                clipped.add(
+                                    egui::epaint::RectShape::filled(
+                                        icon_rect,
+                                        CornerRadius::same(RADIUS),
+                                        Color32::WHITE,
+                                    )
+                                    .with_texture(texture, uv()),
+                                );
+                            } else {
+                                clipped.rect_filled(
+                                    icon_rect,
+                                    CornerRadius::same(RADIUS),
+                                    Color32::from_rgb(0x11, 0x11, 0x11),
+                                );
+                            }
+                            text_x = icon_rect.max.x + 12.0;
+                        }
+
+                        let label = match (kind, &row.meta) {
+                            (Kind::Servers, Some(address)) => format!("{} · {}", row.name, address),
+                            (_, Some(version)) => format!("{} · {}", row.name, version),
+                            _ => row.name.clone(),
+                        };
+                        let colour = if row.enabled { TEXT } else { FAINT };
+                        let line = if tall && !row.description.is_empty() {
+                            item.min.y + 17.0
+                        } else {
+                            item.center().y
                         };
                         ui.painter().text(
-                            Pos2::new(item.min.x + 60.0, item.center().y),
+                            Pos2::new(text_x, line),
                             Align2::LEFT_CENTER,
-                            label,
+                            label.clone(),
                             regular(13.0),
-                            if *enabled { TEXT } else { FAINT },
+                            colour,
                         );
-                        ui.painter().text(
-                            Pos2::new(item.min.x + 60.0, item.center().y + 13.0),
-                            Align2::LEFT_CENTER,
-                            if *enabled { "Enabled" } else { "Disabled" },
-                            regular(10.0),
-                            if *enabled { DIM } else { FAINT },
-                        );
+                        if row.auto {
+                            let w = text_width(ui.ctx(), &label, &regular(13.0));
+                            ui.painter().text(
+                                Pos2::new(text_x + w + 10.0, line),
+                                Align2::LEFT_CENTER,
+                                "auto-installed",
+                                regular(10.0),
+                                DIM,
+                            );
+                        } else if !tall {
+                            ui.painter().text(
+                                Pos2::new(text_x, line + 13.0),
+                                Align2::LEFT_CENTER,
+                                if row.enabled { "Enabled" } else { "Disabled" },
+                                regular(10.0),
+                                if row.enabled { DIM } else { FAINT },
+                            );
+                        }
+                        if tall && !row.description.is_empty() {
+                            let body = if row.description.chars().count() > 96 {
+                                format!(
+                                    "{}…",
+                                    row.description.chars().take(96).collect::<String>()
+                                )
+                            } else {
+                                row.description.clone()
+                            };
+                            let wrap = (item.max.x - 240.0 - text_x).max(80.0);
+                            let galley = ctx
+                                .fonts(|f| f.layout(body, regular(12.0), MUTED, wrap));
+                            clipped.galley(Pos2::new(text_x, item.min.y + 34.0), galley, MUTED);
+                        }
 
                         let mut right = item.max.x - 12.0;
                         let del_w = text_width(ui.ctx(), "DELETE", &bold(11.0)) + 20.0;
@@ -1147,17 +1289,123 @@ impl App {
                             )
                             .clicked()
                             {
-                                match slug {
+                                match &row.slug {
                                     Some(value) if !busy => {
-                                        self.updates.check(name, value);
-                                        self.state.flash(format!("Looking for a newer {name}…"));
+                                        self.updates.check(
+                                            &row.name,
+                                            value,
+                                            &instance.loader,
+                                            &instance.version,
+                                        );
+                                        self.state.flash(format!(
+                                            "Looking for a newer {}…",
+                                            row.name
+                                        ));
                                     }
                                     Some(_) => {}
                                     None => self.state.flash(format!(
-                                        "{name} was added by hand, so there is nothing to check."
+                                        "{} was added by hand, so there is nothing to check.",
+                                        row.name
                                     )),
                                 }
                             }
+                        }
+                        ui.add_space(8.0);
+                    }
+                }
+
+                // optional extras, offered after an install
+                if kind != Kind::Servers
+                    && instance.offers_kind == kind.key()
+                    && !instance.offers.is_empty()
+                {
+                    ui.add_space(20.0);
+                    let title = format!("OPTIONAL FOR {}", instance.offers_for.to_uppercase());
+                    let (rect, _) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width() - 56.0, 14.0),
+                        Sense::hover(),
+                    );
+                    kicker(ui.painter(), Pos2::new(rect.min.x + 28.0, rect.min.y), &title);
+                    ui.add_space(10.0);
+                    let offers = instance.offers.clone();
+                    for (slot, offer) in offers.iter().enumerate() {
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width() - 56.0, 56.0),
+                            Sense::hover(),
+                        );
+                        let item = Rect::from_min_max(
+                            Pos2::new(rect.min.x + 28.0, rect.min.y),
+                            Pos2::new(rect.max.x - 28.0, rect.min.y + 56.0),
+                        );
+                        ui.painter().rect_filled(item, CornerRadius::same(RADIUS), CARD);
+                        let clipped = ui.painter().with_clip_rect(item);
+                        let icon_rect = Rect::from_min_size(
+                            Pos2::new(item.min.x + 12.0, item.center().y - 18.0),
+                            Vec2::new(36.0, 36.0),
+                        );
+                        let texture = match offer.icon.clone() {
+                            Some(url) => match self.icons.get(&url).cloned() {
+                                Some(pixels) => self.assets.store(&ctx, &url, &pixels),
+                                None => {
+                                    self.icons.want(&url);
+                                    None
+                                }
+                            },
+                            None => self.assets.id(&ctx, "brand/mark.png"),
+                        };
+                        if let Some(texture) = texture {
+                            clipped.add(
+                                egui::epaint::RectShape::filled(
+                                    icon_rect,
+                                    CornerRadius::same(RADIUS),
+                                    Color32::WHITE,
+                                )
+                                .with_texture(texture, uv()),
+                            );
+                        }
+                        let text_x = icon_rect.max.x + 12.0;
+                        clipped.text(
+                            Pos2::new(text_x, item.min.y + 11.0),
+                            Align2::LEFT_TOP,
+                            offer.name.clone(),
+                            bold(13.0),
+                            TEXT,
+                        );
+                        let body = if offer.summary().chars().count() > 88 {
+                            format!("{}…", offer.summary().chars().take(88).collect::<String>())
+                        } else {
+                            offer.summary()
+                        };
+                        let wrap = (item.max.x - 140.0 - text_x).max(80.0);
+                        let galley =
+                            ctx.fonts(|f| f.layout(body, regular(12.0), MUTED, wrap));
+                        clipped.galley(Pos2::new(text_x, item.min.y + 31.0), galley, MUTED);
+                        let w = text_width(ui.ctx(), "ADD", &bold(11.0)) + 20.0;
+                        let btn = Rect::from_min_size(
+                            Pos2::new(item.max.x - 12.0 - w, item.center().y - 13.0),
+                            Vec2::new(w, 26.0),
+                        );
+                        if button(
+                            ui,
+                            ui.id().with("offer-add").with(slot),
+                            btn,
+                            &Button::ghost("ADD").font(bold(10.0)),
+                        )
+                        .clicked()
+                        {
+                            let entry = offer.clone();
+                            let id = self.state.current;
+                            let instance = self.state.instance_mut(id);
+                            if let Some(list) = instance.entries_mut(kind) {
+                                if !list.iter().any(|e| e.name == entry.name) {
+                                    list.push(entry);
+                                }
+                            }
+                            let live = self.state.instance_mut(id);
+                            if slot < live.offers.len() {
+                                live.offers.remove(slot);
+                            }
+                            self.state.save();
                         }
                         ui.add_space(8.0);
                     }

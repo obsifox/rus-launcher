@@ -29,6 +29,11 @@ pub struct App {
     state: State,
     search: net::Search,
     updates: net::Updates,
+    details: net::Details,
+    deps: net::Deps,
+    icons: net::Icons,
+    /// Which drawer the running dependency lookup belongs to.
+    deps_kind: crate::data::Kind,
     /// Which drawer of the Directory is open.
     pub drawer: crate::data::Kind,
     /// Text typed into the Directory's add row.
@@ -51,6 +56,10 @@ impl App {
             state: State::new(),
             search: net::Search::default(),
             updates: net::Updates::default(),
+            details: net::Details::default(),
+            deps: net::Deps::default(),
+            icons: net::Icons::default(),
+            deps_kind: crate::data::Kind::Mods,
             drawer: crate::data::Kind::Mods,
             dir_name: String::new(),
             dir_address: String::new(),
@@ -76,6 +85,141 @@ impl App {
             Some(current) => current.max(until),
             None => until,
         });
+    }
+
+    /// Asks for the text, art and dependencies of the things that were added.
+    pub fn look_up(&mut self, name: &str, kind: crate::data::Kind) {
+        self.details.look_up(name, kind.facet());
+    }
+
+    /// Fills in the text and art of an item we already know the slug of.
+    pub fn fill_in(&mut self, name: &str, slug: &str) {
+        self.details.fill(name, slug);
+    }
+
+    /// Starts a dependency lookup for `slug`, remembering where it belongs.
+    pub fn fetch_deps(&mut self, slug: &str, name: &str, kind: crate::data::Kind) {
+        let instance = self.state.current_instance().clone();
+        self.deps_kind = kind;
+        self.deps
+            .fetch(slug, name, &instance.loader, &instance.version);
+    }
+
+    /// Collects everything the worker threads came back with.
+    fn apply_lookups(&mut self) {
+        if self.icons.pump() {
+            self.keep_animating(0.05);
+        }
+
+        // An item typed in by hand: give it the text and art of the real project.
+        if let Some((name, found)) = self.details.poll() {
+            let chained = self.details.chained();
+            if let Some(project) = found {
+                let slug = project.slug.clone();
+                let description = project.description.clone();
+                let icon = project.icon_url.clone();
+                let mut filled = false;
+                let id = self.state.current;
+                let instance = self.state.instance_mut(id);
+                {
+                    for list in [
+                        &mut instance.mods,
+                        &mut instance.resourcepacks,
+                        &mut instance.shaderpacks,
+                    ] {
+                        if let Some(entry) = list.iter_mut().find(|e| e.name == name) {
+                            entry.slug = Some(slug.clone());
+                            entry.description = Some(description.clone());
+                            entry.icon = icon.clone();
+                            if entry.source == "local" {
+                                entry.source = "modrinth".into();
+                            }
+                            filled = true;
+                            break;
+                        }
+                    }
+                }
+                if filled {
+                    self.state.save();
+                    if chained {
+                        let kind = self.deps_kind;
+                        self.fetch_deps(&slug, &name, kind);
+                    }
+                }
+            }
+        }
+
+        // Dependencies: the required ones install themselves, the rest are offered.
+        if let Some((slug, parent, found)) = self.deps.poll() {
+            match found {
+                Some(deps) => {
+                    let kind = self.deps_kind;
+                    let id = self.state.current;
+                    let mut installed: Vec<String> = Vec::new();
+                    let mut optional: Vec<crate::data::Entry> = Vec::new();
+                    let instance = self.state.instance_mut(id);
+                    if let Some(list) = instance.entries_mut(kind) {
+                            for dep in deps {
+                                let project = dep.project;
+                                let known = list.iter().any(|e| {
+                                    e.slug.as_deref() == Some(project.slug.as_str())
+                                        || e.name == project.title
+                                });
+                                if known {
+                                    continue;
+                                }
+                                if dep.required {
+                                    list.push(crate::data::Entry::dependency(
+                                        &project.title,
+                                        &project.slug,
+                                        &project.description,
+                                        project.icon_url.clone(),
+                                    ));
+                                    installed.push(project.title.clone());
+                                } else {
+                                    optional.push(crate::data::Entry::found(
+                                        &project.title,
+                                        &project.slug,
+                                        &project.description,
+                                        project.icon_url.clone(),
+                                    ));
+                                }
+                            }
+                    }
+                    let instance = self.state.instance_mut(id);
+                    instance.offers = optional;
+                    instance.offers_kind = kind.key().to_string();
+                    instance.offers_for = parent.clone();
+                    if !installed.is_empty() {
+                        let word = if installed.len() == 1 {
+                            "dependency"
+                        } else {
+                            "dependencies"
+                        };
+                        self.state.flash(format!(
+                            "{parent} needs {} {word}: {}.",
+                            installed.len(),
+                            installed.join(", ")
+                        ));
+                    } else if let Some(count) = self
+                        .state
+                        .instance(id)
+                        .map(|i| i.offers.len())
+                        .filter(|n| *n > 0)
+                    {
+                        self.state.flash(format!(
+                            "{parent} has {count} optional {}.",
+                            if count == 1 { "extra" } else { "extras" }
+                        ));
+                    }
+                    let _ = slug;
+                    self.state.save();
+                }
+                None => self.state.flash(format!(
+                    "Could not read the dependencies of {parent}."
+                )),
+            }
+        }
     }
 
     fn transient_set(&mut self, key: &str, secs: f32) {
@@ -109,6 +253,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         self.search.poll();
         self.updates.poll(&mut self.state);
+        self.apply_lookups();
 
         // Pages fade in, buttons flash their confirmation label and the Modrinth
         // and CurseForge lookups run on a worker thread: all of them need frames
@@ -116,7 +261,14 @@ impl eframe::App for App {
         let animating = self
             .anim_until
             .map_or(false, |until| Instant::now() < until);
-        if self.search.busy || self.updates.busy || animating {
+        if self.search.busy
+            || self.updates.busy
+            || self.details.busy
+            || self.deps.busy
+            || self.icons.waiting()
+            || self.state.flash_text().is_some()
+            || animating
+        {
             ctx.request_repaint();
         }
 
