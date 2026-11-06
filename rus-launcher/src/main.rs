@@ -28,6 +28,13 @@ pub struct App {
     assets: Assets,
     state: State,
     search: net::Search,
+    updates: net::Updates,
+    /// Which drawer of the Directory is open.
+    pub drawer: crate::data::Kind,
+    /// Text typed into the Directory's add row.
+    pub dir_name: String,
+    pub dir_address: String,
+    pub edit_confirm: bool,
     modal: ModalHost,
     page_since: Instant,
     transient: HashMap<String, Instant>,
@@ -43,6 +50,11 @@ impl App {
             assets: Assets::new(),
             state: State::new(),
             search: net::Search::default(),
+            updates: net::Updates::default(),
+            drawer: crate::data::Kind::Mods,
+            dir_name: String::new(),
+            dir_address: String::new(),
+            edit_confirm: false,
             modal: ModalHost::default(),
             page_since: Instant::now(),
             transient: HashMap::new(),
@@ -96,6 +108,7 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         self.search.poll();
+        self.updates.poll(&mut self.state);
 
         // Pages fade in, buttons flash their confirmation label and the Modrinth
         // and CurseForge lookups run on a worker thread: all of them need frames
@@ -103,7 +116,7 @@ impl eframe::App for App {
         let animating = self
             .anim_until
             .map_or(false, |until| Instant::now() < until);
-        if self.search.busy || animating {
+        if self.search.busy || self.updates.busy || animating {
             ctx.request_repaint();
         }
 
@@ -135,6 +148,7 @@ impl eframe::App for App {
                 let salt = match self.state.page {
                     Page::Home => "page-home",
                     Page::Instance => "page-instance",
+                    Page::Directory => "page-directory",
                     Page::Mods => "page-mods",
                     Page::Settings => "page-settings",
                 };
@@ -154,6 +168,7 @@ impl eframe::App for App {
                 match self.state.page.clone() {
                     Page::Home => self.page_home(&mut child),
                     Page::Instance => self.page_instance(&mut child),
+                    Page::Directory => self.page_directory(&mut child),
                     Page::Mods => self.page_mods(&mut child),
                     Page::Settings => self.page_settings(&mut child),
                 }

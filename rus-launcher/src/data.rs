@@ -120,6 +120,70 @@ pub fn family_groups(list: &[Version]) -> Vec<(String, Vec<usize>)> {
 pub struct Server {
     pub name: String,
     pub address: String,
+    pub enabled: bool,
+}
+
+/// One installed thing in the Directory: a mod, a resource pack, a shader pack.
+#[derive(Clone)]
+pub struct Entry {
+    pub name: String,
+    /// Modrinth slug, when the item came from a search, so it can be updated.
+    pub slug: Option<String>,
+    pub version: Option<String>,
+    pub enabled: bool,
+    pub source: String,
+}
+
+/// The four drawers of the Directory.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Mods,
+    ResourcePacks,
+    ShaderPacks,
+    Servers,
+}
+
+impl Kind {
+    pub const ALL: [Kind; 4] = [Kind::Mods, Kind::ResourcePacks, Kind::ShaderPacks, Kind::Servers];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Mods => "Mods",
+            Kind::ResourcePacks => "Resource packs",
+            Kind::ShaderPacks => "Shader packs",
+            Kind::Servers => "Servers",
+        }
+    }
+
+    pub fn tab(self) -> &'static str {
+        match self {
+            Kind::Mods => "MODS",
+            Kind::ResourcePacks => "RESOURCE PACKS",
+            Kind::ShaderPacks => "SHADER PACKS",
+            Kind::Servers => "SERVERS",
+        }
+    }
+
+    pub fn empty(self) -> &'static str {
+        match self {
+            Kind::Mods => "No mods here yet. Add them from the Mods page or by hand.",
+            Kind::ResourcePacks => "No resource packs yet.",
+            Kind::ShaderPacks => "No shader packs yet.",
+            Kind::Servers => "No servers yet.",
+        }
+    }
+}
+
+impl Entry {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            slug: None,
+            version: None,
+            enabled: true,
+            source: "local".into(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -130,14 +194,44 @@ pub struct Instance {
     pub loader: String,
     pub source: String,
     pub image: Option<String>,
-    pub mods: Vec<String>,
+    pub mods: Vec<Entry>,
+    pub resourcepacks: Vec<Entry>,
+    pub shaderpacks: Vec<Entry>,
     pub servers: Vec<Server>,
+}
+
+impl Instance {
+    pub fn entries(&self, kind: Kind) -> &Vec<Entry> {
+        match kind {
+            Kind::Mods => &self.mods,
+            Kind::ResourcePacks => &self.resourcepacks,
+            Kind::ShaderPacks => &self.shaderpacks,
+            Kind::Servers => &self.mods,
+        }
+    }
+
+    pub fn entries_mut(&mut self, kind: Kind) -> Option<&mut Vec<Entry>> {
+        match kind {
+            Kind::Mods => Some(&mut self.mods),
+            Kind::ResourcePacks => Some(&mut self.resourcepacks),
+            Kind::ShaderPacks => Some(&mut self.shaderpacks),
+            Kind::Servers => None,
+        }
+    }
+
+    pub fn count(&self, kind: Kind) -> usize {
+        match kind {
+            Kind::Servers => self.servers.len(),
+            other => self.entries(other).len(),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
 pub enum Page {
     Home,
     Instance,
+    Directory,
     Mods,
     Settings,
 }
@@ -206,12 +300,42 @@ impl State {
         let survival = self.add("Survival", "26.3", "Fabric", "new");
         let creative = self.add("Creative", "1.21.11", "Vanilla", "new");
         let legacy = self.add("Legacy", "1.14", "Forge", "import");
-        self.instance_mut(survival)
-            .servers
-            .push(Server { name: "Hypixel".into(), address: "mc.hypixel.net".into() });
+        self.instance_mut(survival).servers.push(Server {
+            name: "Hypixel".into(),
+            address: "mc.hypixel.net".into(),
+            enabled: true,
+        });
+        let survival = self.instances[0].id;
+        let pack = self.instance_mut(survival);
+        pack.mods = vec![
+            Entry {
+                name: "Sodium".into(),
+                slug: Some("sodium".into()),
+                version: Some("mc1.21-0.6.13".into()),
+                enabled: true,
+                source: "modrinth".into(),
+            },
+            Entry {
+                name: "Iris Shaders".into(),
+                slug: Some("iris".into()),
+                version: None,
+                enabled: true,
+                source: "modrinth".into(),
+            },
+            Entry {
+                name: "JEI".into(),
+                slug: None,
+                version: None,
+                enabled: false,
+                source: "local".into(),
+            },
+        ];
+        pack.resourcepacks = vec![Entry::new("Faithful 64x"), Entry::new("Vanilla Tweaks")];
+        pack.shaderpacks = vec![Entry::new("Complementary Reimagined")];
         self.instance_mut(legacy).servers.push(Server {
             name: "Legacy Realm".into(),
             address: "play.legacy.net".into(),
+            enabled: true,
         });
         self.current = survival;
         self.pins = vec![survival, creative];
@@ -230,6 +354,8 @@ impl State {
             source: source.to_string(),
             image: None,
             mods: Vec::new(),
+            resourcepacks: Vec::new(),
+            shaderpacks: Vec::new(),
             servers: Vec::new(),
         });
         id
@@ -314,6 +440,8 @@ impl State {
         let cloned = self.instance_mut(copy);
         cloned.image = source.image.clone();
         cloned.mods = source.mods.clone();
+        cloned.resourcepacks = source.resourcepacks.clone();
+        cloned.shaderpacks = source.shaderpacks.clone();
         cloned.servers = source.servers.clone();
         self.current = copy;
         let original = source.name.clone();
@@ -381,8 +509,10 @@ impl State {
                     "loader": i.loader,
                     "source": i.source,
                     "image": i.image,
-                    "mods": i.mods,
-                    "servers": i.servers.iter().map(|s| serde_json::json!({"name": s.name, "address": s.address})).collect::<Vec<_>>(),
+                    "mods": entries_json(&i.mods),
+                    "resourcepacks": entries_json(&i.resourcepacks),
+                    "shaderpacks": entries_json(&i.shaderpacks),
+                    "servers": i.servers.iter().map(|s| serde_json::json!({"name": s.name, "address": s.address, "enabled": s.enabled})).collect::<Vec<_>>(),
                 })
             })
             .collect();
@@ -444,11 +574,17 @@ impl State {
                     let mods = item
                         .get("mods")
                         .and_then(|v| v.as_array())
-                        .map(|list| {
-                            list.iter()
-                                .filter_map(|m| m.as_str().map(|s| s.to_string()))
-                                .collect()
-                        })
+                        .map(|list| entries_from(list))
+                        .unwrap_or_default();
+                    let resourcepacks = item
+                        .get("resourcepacks")
+                        .and_then(|v| v.as_array())
+                        .map(|list| entries_from(list))
+                        .unwrap_or_default();
+                    let shaderpacks = item
+                        .get("shaderpacks")
+                        .and_then(|v| v.as_array())
+                        .map(|list| entries_from(list))
                         .unwrap_or_default();
                     let servers = item
                         .get("servers")
@@ -459,6 +595,7 @@ impl State {
                                     Some(Server {
                                         name: s.get("name")?.as_str()?.to_string(),
                                         address: s.get("address")?.as_str()?.to_string(),
+                                        enabled: s.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
                                     })
                                 })
                                 .collect()
@@ -473,6 +610,8 @@ impl State {
                         source,
                         image,
                         mods,
+                        resourcepacks,
+                        shaderpacks,
                         servers,
                     });
                 }
@@ -529,4 +668,50 @@ impl State {
         }
         true
     }
+}
+
+fn entries_json(list: &[Entry]) -> Vec<serde_json::Value> {
+    list.iter()
+        .map(|e| {
+            serde_json::json!({
+                "name": e.name,
+                "slug": e.slug,
+                "version": e.version,
+                "enabled": e.enabled,
+                "source": e.source,
+            })
+        })
+        .collect()
+}
+
+/// Reads a drawer. Older saves stored plain names, so both forms are accepted.
+fn entries_from(list: &[serde_json::Value]) -> Vec<Entry> {
+    list.iter()
+        .map(|item| {
+            if let Some(name) = item.as_str() {
+                return Entry::new(name);
+            }
+            Entry {
+                name: item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Item")
+                    .to_string(),
+                slug: item
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                version: item
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                enabled: item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                source: item
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("local")
+                    .to_string(),
+            }
+        })
+        .collect()
 }

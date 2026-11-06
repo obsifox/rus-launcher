@@ -1,7 +1,7 @@
 use egui::{Align2, Color32, Context, FontId, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 use crate::assets::Assets;
-use crate::data::{Page, State, TYPES};
+use crate::data::{Kind,Page, State, TYPES};
 use crate::theme::*;
 use crate::App;
 
@@ -557,48 +557,29 @@ impl App {
             );
         }
 
-        // buttons: three across, two rows
-        let labels = [
-            if is_current { "OPEN" } else { "OPEN" },
-            "RENAME",
-            "IMAGE",
-            "DUPLICATE",
-            "SERVERS",
-            if pinned { "PINNED" } else { "PIN" },
-        ];
-        let on = [is_current, false, false, false, false, pinned];
-        let row_top = rect.max.y - 12.0 - 28.0 * 2.0 - 6.0;
+        // two wide buttons: everything about editing lives in the Edit popup,
+        // and the servers now live in the Directory.
+        let labels = ["EDIT", "DIRECTORY"];
+        let row_top = rect.max.y - 12.0 - 28.0;
+        let bw = (rect.width() - pad_x * 2.0 - 6.0) / 2.0;
         for (slot, label) in labels.iter().enumerate() {
-            let col = slot % 3;
-            let row = slot / 3;
-            let bw = (rect.width() - pad_x * 2.0 - 12.0) / 3.0;
             let btn = Rect::from_min_size(
                 Pos2::new(
-                    rect.min.x + pad_x + col as f32 * (bw + 6.0),
-                    row_top + row as f32 * (28.0 + 6.0),
+                    rect.min.x + pad_x + slot as f32 * (bw + 6.0),
+                    row_top,
                 ),
                 Vec2::new(bw, 28.0),
             );
-            let style = Button::ghost(*label).on(on[slot]).font(bold(9.0));
+            let style = Button::ghost(*label).font(bold(9.0));
             let clicked = button(ui, ui.id().with("iact").with(id).with(slot), btn, &style).clicked();
             if clicked {
                 match slot {
-                    0 => {
+                    0 => self.open_edit(id),
+                    _ => {
                         self.state.current = id;
                         self.state.save();
+                        self.set_page(Page::Directory);
                     }
-                    1 => self.open_rename(id),
-                    2 => self.open_image(id),
-                    3 => {
-                        self.state.duplicate(id);
-                        self.state.save();
-                    }
-                    4 => self.open_servers(id),
-                    5 => {
-                        self.state.toggle_pin(id);
-                        self.state.save();
-                    }
-                    _ => {}
                 }
             }
         }
@@ -826,7 +807,7 @@ impl App {
                 if mods.is_empty() {
                     note(ui, "No mods yet.");
                 } else {
-                    for (index, name) in mods.iter().enumerate() {
+                    for (index, entry) in mods.iter().enumerate() {
                         let (rect, _) =
                             ui.allocate_exact_size(Vec2::new(ui.available_width() - 56.0, 44.0), Sense::hover());
                         let item = Rect::from_min_max(
@@ -837,9 +818,9 @@ impl App {
                         ui.painter().text(
                             Pos2::new(item.min.x + 12.0, item.center().y),
                             Align2::LEFT_CENTER,
-                            name,
+                            entry.name.clone(),
                             regular(13.0),
-                            TEXT,
+                            if entry.enabled { TEXT } else { FAINT },
                         );
                         let w = text_width(ui.ctx(), "REMOVE", &bold(11.0)) + 20.0;
                         let btn = Rect::from_min_size(
@@ -914,14 +895,326 @@ impl App {
         if button(ui, ui.id().with("hit-add").with(slot).with(&hit.title), btn, &style).clicked() {
             let title = hit.title.clone();
             let instance = self.state.current_instance_mut();
-            if !instance.mods.iter().any(|m| m == &title) {
-                instance.mods.push(title.clone());
+            if !instance.mods.iter().any(|m| m.name == title) {
+                instance.mods.push(crate::data::Entry {
+                    name: title.clone(),
+                    slug: hit.slug.clone(),
+                    version: hit.version.clone(),
+                    enabled: true,
+                    source: self.search.source.clone(),
+                });
             }
             if let Some(found) = self.search.results.iter_mut().find(|h| h.title == title) {
                 found.added = true;
             }
             self.state.save();
         }
+    }
+
+    /* ------------------------------------------------------------- directory */
+
+    /// Everything installed on the selected instance, in four drawers.
+    pub fn page_directory(&mut self, ui: &mut Ui) {
+        let instance = self.state.current_instance().clone();
+        let version = self.state.list[self.state.version(&instance.version)].clone();
+        let ctx = ui.ctx().clone();
+        egui::ScrollArea::vertical()
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .show(ui, |ui| {
+                ui.add_space(22.0);
+                let (rect, _) =
+                    ui.allocate_exact_size(Vec2::new(ui.available_width(), 14.0), Sense::hover());
+                kicker(
+                    ui.painter(),
+                    Pos2::new(rect.min.x + 28.0, rect.min.y),
+                    "DIRECTORY",
+                );
+                ui.add_space(8.0);
+                let inner = ui.max_rect();
+                ui.allocate_ui_at_rect(
+                    Rect::from_min_max(
+                        Pos2::new(inner.min.x + 28.0, ui.cursor().min.y),
+                        Pos2::new(inner.max.x - 28.0, ui.cursor().min.y + 34.0),
+                    ),
+                    |ui| heading(ui, &instance.name, 28.0),
+                );
+                ui.add_space(8.0);
+                let (rect, _) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width() - 56.0, 18.0),
+                    Sense::hover(),
+                );
+                let text = format!(
+                    "{} · {}{}",
+                    version.version,
+                    instance.loader,
+                    if instance.source == "import" { " · Imported" } else { "" }
+                );
+                ui.painter().galley(
+                    Pos2::new(rect.min.x + 28.0, rect.min.y),
+                    ctx.fonts(|f| f.layout(text, regular(13.0), MUTED, rect.width())),
+                    MUTED,
+                );
+
+                // drawers
+                ui.add_space(18.0);
+                let (row, _) =
+                    ui.allocate_exact_size(Vec2::new(ui.available_width(), 36.0), Sense::hover());
+                let mut x = row.min.x + 28.0;
+                for kind in Kind::ALL {
+                    let label = kind.tab();
+                    let count = instance.count(kind);
+                    let text = format!("{label} · {count}");
+                    let w = text_width(ui.ctx(), &text, &medium(13.0)) + 24.0;
+                    let rect = Rect::from_min_size(Pos2::new(x, row.min.y + 2.0), Vec2::new(w, 32.0));
+                    x += w + 9.0;
+                    let style = Button::chip(&text, self.drawer == kind);
+                    if button(ui, ui.id().with("drawer").with(label), rect, &style).clicked() {
+                        self.drawer = kind;
+                    }
+                }
+
+                // add row
+                ui.add_space(16.0);
+                let kind = self.drawer;
+                let (row, _) =
+                    ui.allocate_exact_size(Vec2::new(ui.available_width() - 56.0, 36.0), Sense::hover());
+                let field_w = if kind == Kind::Servers { 220.0 } else { 320.0 };
+                let mut name = self.dir_name.clone();
+                let response = input(
+                    &mut ui.child_ui(
+                        Rect::from_min_size(Pos2::new(row.min.x + 28.0, row.min.y), Vec2::new(field_w, 36.0)),
+                        egui::Layout::top_down(egui::Align::Min),
+                        None,
+                    ),
+                    &mut name,
+                    field_w - 10.0,
+                    match kind {
+                        Kind::Servers => "Server name",
+                        Kind::ResourcePacks => "Resource pack name",
+                        Kind::ShaderPacks => "Shader pack name",
+                        Kind::Mods => "Mod name",
+                    },
+                );
+                let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let mut address = self.dir_address.clone();
+                let mut addr_response = None;
+                let mut x = row.min.x + 28.0 + field_w + 8.0;
+                if kind == Kind::Servers {
+                    addr_response = Some(input(
+                        &mut ui.child_ui(
+                            Rect::from_min_size(Pos2::new(x, row.min.y), Vec2::new(240.0, 36.0)),
+                            egui::Layout::top_down(egui::Align::Min),
+                            None,
+                        ),
+                        &mut address,
+                        230.0,
+                        "Address",
+                    ));
+                    x += 248.0;
+                }
+                if name != self.dir_name {
+                    self.dir_name = name;
+                }
+                if address != self.dir_address {
+                    self.dir_address = address;
+                }
+                let add_label = "ADD";
+                let w = text_width(ui.ctx(), add_label, &bold(12.0)) + 32.0;
+                let add_rect = Rect::from_min_size(Pos2::new(x, row.min.y + 1.0), Vec2::new(w, 34.0));
+                let pressed = button(ui, ui.id().with("dir-add"), add_rect, &Button::primary(add_label).font(bold(12.0))).clicked()
+                    || (enter && (response.has_focus() || addr_response.map_or(false, |r| r.has_focus())));
+                if pressed {
+                    let name = self.dir_name.trim().to_string();
+                    if !name.is_empty() {
+                        let instance = self.state.current_instance_mut();
+                        match kind {
+                            Kind::Servers => {
+                                let address = self.dir_address.trim().to_string();
+                                if !address.is_empty() {
+                                    instance.servers.push(crate::data::Server {
+                                        name: name.clone(),
+                                        address,
+                                        enabled: true,
+                                    });
+                                    self.dir_name.clear();
+                                    self.dir_address.clear();
+                                    self.state.flash(format!("{name} added."));
+                                }
+                            }
+                            other => {
+                                if let Some(list) = instance.entries_mut(other) {
+                                    list.push(crate::data::Entry::new(name.clone()));
+                                    self.dir_name.clear();
+                                    self.state.flash(format!("{name} added."));
+                                }
+                            }
+                        }
+                        self.state.save();
+                    }
+                }
+
+                if let Some(text) = self.state.flash_text().map(|s| s.to_string()) {
+                    ui.add_space(12.0);
+                    note_colour(ui, &text, Color32::from_rgb(0xff, 0xb4, 0xb8));
+                }
+
+                // rows
+                ui.add_space(14.0);
+                let entries: Vec<(String, Option<String>, bool, Option<String>)> = match kind {
+                    Kind::Servers => instance
+                        .servers
+                        .iter()
+                        .map(|s| (s.name.clone(), Some(s.address.clone()), s.enabled, None))
+                        .collect(),
+                    other => instance
+                        .entries(other)
+                        .iter()
+                        .map(|e| (e.name.clone(), e.version.clone(), e.enabled, e.slug.clone()))
+                        .collect(),
+                };
+                if entries.is_empty() {
+                    note(ui, kind.empty());
+                } else {
+                    for (index, (name, meta, enabled, slug)) in entries.iter().enumerate() {
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width() - 56.0, 44.0),
+                            Sense::hover(),
+                        );
+                        let item = Rect::from_min_max(
+                            Pos2::new(rect.min.x + 28.0, rect.min.y),
+                            Pos2::new(rect.max.x - 28.0, rect.min.y + 44.0),
+                        );
+                        ui.painter().rect_filled(item, CornerRadius::same(RADIUS), CARD);
+
+                        let sw = Rect::from_min_size(
+                            Pos2::new(item.min.x + 12.0, item.center().y - 9.0),
+                            Vec2::new(34.0, 18.0),
+                        );
+                        if switch(ui, ui.id().with("dir-sw").with(index), sw, *enabled) {
+                            self.toggle_entry(kind, index);
+                        }
+
+                        let label = match (kind, meta) {
+                            (Kind::Servers, Some(address)) => format!("{name} · {address}"),
+                            (_, Some(version)) => format!("{name} · {version}"),
+                            _ => name.clone(),
+                        };
+                        ui.painter().text(
+                            Pos2::new(item.min.x + 60.0, item.center().y),
+                            Align2::LEFT_CENTER,
+                            label,
+                            regular(13.0),
+                            if *enabled { TEXT } else { FAINT },
+                        );
+                        ui.painter().text(
+                            Pos2::new(item.min.x + 60.0, item.center().y + 13.0),
+                            Align2::LEFT_CENTER,
+                            if *enabled { "Enabled" } else { "Disabled" },
+                            regular(10.0),
+                            if *enabled { DIM } else { FAINT },
+                        );
+
+                        let mut right = item.max.x - 12.0;
+                        let del_w = text_width(ui.ctx(), "DELETE", &bold(11.0)) + 20.0;
+                        right -= del_w;
+                        let del = Rect::from_min_size(
+                            Pos2::new(right, item.center().y - 13.0),
+                            Vec2::new(del_w, 26.0),
+                        );
+                        if button(
+                            ui,
+                            ui.id().with("dir-del").with(index),
+                            del,
+                            &Button::ghost("DELETE").font(bold(10.0)),
+                        )
+                        .clicked()
+                        {
+                            self.remove_entry(kind, index);
+                        }
+                        if kind != Kind::Servers {
+                            let up_w = text_width(ui.ctx(), "UPDATE", &bold(11.0)) + 20.0;
+                            right -= up_w + 8.0;
+                            let up = Rect::from_min_size(
+                                Pos2::new(right, item.center().y - 13.0),
+                                Vec2::new(up_w, 26.0),
+                            );
+                            let busy = self.updates.busy;
+                            if button(
+                                ui,
+                                ui.id().with("dir-up").with(index),
+                                up,
+                                &Button::ghost("UPDATE").font(bold(10.0)).on(busy),
+                            )
+                            .clicked()
+                            {
+                                match slug {
+                                    Some(value) if !busy => {
+                                        self.updates.check(name, value);
+                                        self.state.flash(format!("Looking for a newer {name}…"));
+                                    }
+                                    Some(_) => {}
+                                    None => self.state.flash(format!(
+                                        "{name} was added by hand, so there is nothing to check."
+                                    )),
+                                }
+                            }
+                        }
+                        ui.add_space(8.0);
+                    }
+                }
+                ui.add_space(28.0);
+            });
+    }
+
+    fn toggle_entry(&mut self, kind: Kind, index: usize) {
+        let id = self.state.current;
+        let instance = self.state.instance_mut(id);
+        match kind {
+            Kind::Servers => {
+                if let Some(server) = instance.servers.get_mut(index) {
+                    server.enabled = !server.enabled;
+                }
+            }
+            other => {
+                if let Some(list) = instance.entries_mut(other) {
+                    if let Some(entry) = list.get_mut(index) {
+                        entry.enabled = !entry.enabled;
+                    }
+                }
+            }
+        }
+        self.state.save();
+    }
+
+    fn remove_entry(&mut self, kind: Kind, index: usize) {
+        let id = self.state.current;
+        let name = match kind {
+            Kind::Servers => self
+                .state
+                .instance(id)
+                .and_then(|i| i.servers.get(index))
+                .map(|s| s.name.clone()),
+            other => self
+                .state
+                .instance(id)
+                .and_then(|i| i.entries(other).get(index))
+                .map(|e| e.name.clone()),
+        };
+        let instance = self.state.instance_mut(id);
+        match kind {
+            Kind::Servers => {
+                instance.servers.remove(index);
+            }
+            other => {
+                if let Some(list) = instance.entries_mut(other) {
+                    list.remove(index);
+                }
+            }
+        }
+        if let Some(name) = name {
+            self.state.flash(format!("{name} removed."));
+        }
+        self.state.save();
     }
 
     /* -------------------------------------------------------------- settings */
@@ -1160,6 +1453,7 @@ pub fn page_id(page: &Page) -> Id {
     match page {
         Page::Home => Id::new("home"),
         Page::Instance => Id::new("instance"),
+        Page::Directory => Id::new("directory"),
         Page::Mods => Id::new("mods"),
         Page::Settings => Id::new("settings"),
     }

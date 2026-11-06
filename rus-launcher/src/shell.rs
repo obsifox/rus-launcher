@@ -43,6 +43,25 @@ fn home_icon(painter: &egui::Painter, centre: Pos2, size: f32, colour: Color32) 
     ));
 }
 
+fn folder_icon(painter: &egui::Painter, centre: Pos2, size: f32, colour: Color32) {
+    let stroke = Stroke::new(size / 20.0 * 1.5, colour);
+    painter.add(PathShape::closed_line(
+        pts(
+            centre,
+            size,
+            &[
+                (2.5, 5.0),
+                (8.0, 5.0),
+                (10.0, 8.0),
+                (17.5, 8.0),
+                (17.5, 16.0),
+                (2.5, 16.0),
+            ],
+        ),
+        stroke,
+    ));
+}
+
 fn cube_icon(painter: &egui::Painter, centre: Pos2, size: f32, colour: Color32) {
     let stroke = Stroke::new(size / 20.0 * 1.4, colour);
     painter.add(PathShape::closed_line(
@@ -283,17 +302,7 @@ impl App {
             }
             y += 48.0 + 6.0;
         }
-        if !self.state.pins.is_empty() {
-            ui.painter().text(
-                Pos2::new(centre_x, y + 2.0),
-                Align2::CENTER_TOP,
-                format!("{}/{}", self.state.pins.len(), PIN_MAX),
-                medium(9.0),
-                FAINT,
-            );
-            y += 14.0;
-        }
-        y += 8.0;
+        y += 12.0;
 
         let bottom = rect.max.y - 12.0 - 58.0;
         let tabs = [
@@ -301,21 +310,88 @@ impl App {
             ("Instance", Page::Instance),
             ("Mods", Page::Mods),
         ];
+        // Directory is a child of Instance, so the tabs below it step down.
+        let mut shift = 0.0f32;
         for (index, (label, page)) in tabs.iter().enumerate() {
             let box_rect = Rect::from_min_size(
-                Pos2::new(centre_x - 32.0, y + index as f32 * 64.0),
+                Pos2::new(centre_x - 32.0, y + index as f32 * 64.0 + shift),
                 Vec2::new(64.0, 58.0),
             );
             if box_rect.max.y > bottom {
                 break;
             }
             self.tab(ui, box_rect, label, page);
+            if *page == Page::Instance {
+                let sub = Rect::from_min_size(
+                    Pos2::new(centre_x - 28.0, box_rect.max.y + 4.0),
+                    Vec2::new(56.0, 42.0),
+                );
+                ui.painter().line_segment(
+                    [
+                        Pos2::new(centre_x - 20.0, box_rect.max.y),
+                        Pos2::new(centre_x - 20.0, sub.center().y),
+                    ],
+                    Stroke::new(1.0, BORDER_SOFT),
+                );
+                self.sub_tab(ui, sub, &Page::Directory, "Directory");
+                shift += 46.0;
+            }
         }
         let settings = Rect::from_min_size(
             Pos2::new(centre_x - 32.0, bottom),
             Vec2::new(64.0, 58.0),
         );
         self.tab(ui, settings, "Settings", &Page::Settings);
+    }
+
+    /// A nested entry in the rail: smaller than a tab, drawn as a child of one.
+    fn sub_tab(&mut self, ui: &mut Ui, rect: Rect, page: &Page, label: &str) {
+        let active = self.state.page == *page;
+        let id = ui.id().with("tab").with(label);
+        let response = ui.interact(rect, id, Sense::click());
+        let t = ui
+            .ctx()
+            .animate_bool_with_time(id.with("hover"), response.hovered(), 0.12);
+        let painter = ui.painter();
+        let fill = if active {
+            Color32::from_rgb(0x1c, 0x1c, 0x20)
+        } else {
+            mix(Color32::TRANSPARENT, Color32::from_rgb(0x1a, 0x1a, 0x1e), t)
+        };
+        painter.rect_filled(rect, CornerRadius::same(RADIUS), fill);
+        if active {
+            painter.rect_filled(
+                Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height())),
+                CornerRadius::ZERO,
+                RED,
+            );
+        }
+        let colour = if active {
+            Color32::WHITE
+        } else {
+            mix(MUTED, Color32::WHITE, t)
+        };
+        folder_icon(
+            painter,
+            Pos2::new(rect.center().x, rect.min.y + 13.0),
+            15.0,
+            colour,
+        );
+        tracked(
+            painter,
+            Pos2::new(rect.center().x, rect.max.y - 9.0),
+            "DIRECTORY",
+            medium(8.0),
+            colour,
+            Align2::CENTER_CENTER,
+            0.3,
+        );
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if response.clicked() {
+            self.set_page(page.clone());
+        }
     }
 
     fn tab(&mut self, ui: &mut Ui, rect: Rect, label: &str, page: &Page) {

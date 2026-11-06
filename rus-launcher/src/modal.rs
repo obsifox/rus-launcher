@@ -20,6 +20,11 @@ pub enum ModalKind {
         id: u64,
         name: String,
     },
+    Edit {
+        id: u64,
+        name: String,
+        custom: String,
+    },
     Image {
         id: u64,
         custom: String,
@@ -77,6 +82,16 @@ impl App {
         });
     }
 
+    pub fn open_edit(&mut self, id: u64) {
+        let (name, custom) = self
+            .state
+            .instance(id)
+            .map(|i| (i.name.clone(), i.image.clone().unwrap_or_default()))
+            .unwrap_or_default();
+        self.edit_confirm = false;
+        self.modal.open(ModalKind::Edit { id, name, custom });
+    }
+
     pub fn open_rename(&mut self, id: u64) {
         let name = self.state.instance(id).map(|i| i.name.clone()).unwrap_or_default();
         self.modal.open(ModalKind::Rename { id, name });
@@ -120,6 +135,9 @@ impl App {
         let mut apply_image: Option<(u64, Option<String>)> = None;
         let mut rename: Option<(u64, String)> = None;
         let mut cf: Option<String> = None;
+        let mut edit: Option<(u64, String, String)> = None;
+        let mut action: Option<u8> = None;
+        let mut confirm = self.edit_confirm;
         let mut state = std::mem::replace(&mut self.state, State::new());
 
         egui::Area::new(Id::new("modal-area"))
@@ -133,7 +151,13 @@ impl App {
                 }
 
                 let width = screen.width().min(860.0);
-                let height = screen.height().min(680.0);
+                // the editor carries a name field, the poster grid and the
+                // action row, so it needs more height than the other popups
+                let height = if matches!(kind, ModalKind::Edit { .. }) {
+                    screen.height().min(790.0)
+                } else {
+                    screen.height().min(680.0)
+                };
                 let centre = screen.center() + Vec2::new(0.0, (1.0 - t) * 12.0);
                 let rect = Rect::from_center_size(centre, Vec2::new(width, height));
                 ui.allocate_ui_at_rect(rect, |ui| {
@@ -146,6 +170,10 @@ impl App {
                     let title = match &kind {
                         ModalKind::New { .. } => "New instance".to_string(),
                         ModalKind::Rename { .. } => "Rename instance".to_string(),
+                        ModalKind::Edit { id, .. } => {
+                            let name = state.instance(*id).map(|i| i.name.clone()).unwrap_or_default();
+                            format!("Edit · {name}")
+                        }
                         ModalKind::Image { id, .. } => {
                             let name = state.instance(*id).map(|i| i.name.clone()).unwrap_or_default();
                             format!("Card image · {name}")
@@ -210,6 +238,7 @@ impl App {
                             vec![("CLEAR", false), ("CANCEL", false), ("SAVE", true)]
                         }
                         ModalKind::Servers { .. } => vec![("DONE", true)],
+                        ModalKind::Edit { .. } => vec![("CANCEL", false), ("SAVE", true)],
                         _ => vec![("CANCEL", false), ("CREATE", true)],
                     };
                     let picked = footer_buttons(ui, footer, &buttons);
@@ -251,6 +280,23 @@ impl App {
                             ModalKind::Image { id, custom } => {
                                 image_body(ui, &mut self.assets, &state, *id, custom);
                             }
+                            ModalKind::Edit {
+                                id,
+                                name,
+                                custom,
+                            } => {
+                                edit_body(
+                                    ui,
+                                    &mut self.assets,
+                                    &state,
+                                    *id,
+                                    name,
+                                    custom,
+                                    &mut action,
+                                    &mut confirm,
+                                );
+                                edit = Some((*id, name.clone(), custom.clone()));
+                            }
                             ModalKind::Servers { id, name, address } => {
                                 servers_body(ui, &mut state, *id, name, address);
                             }
@@ -284,6 +330,21 @@ impl App {
                                 _ => cf = Some(key.clone()),
                             },
                             ModalKind::Servers { .. } => close = true,
+                            ModalKind::Edit { .. } => {
+                                if index == 0 {
+                                    close = true;
+                                } else if let Some((id, name, image)) = edit.clone() {
+                                    state.rename(id, name.trim().to_string());
+                                    let image = image.trim().to_string();
+                                    state.instance_mut(id).image = if image.is_empty() {
+                                        None
+                                    } else {
+                                        Some(image)
+                                    };
+                                    state.save();
+                                    close = true;
+                                }
+                            }
                             ModalKind::Rename { .. } => {
                                 if index == 0 {
                                     close = true;
@@ -316,6 +377,49 @@ impl App {
             });
 
         self.modal.focus = false;
+
+        if let Some(slot) = action {
+            if edit.is_some() {
+                if let Some(id) = match &kind {
+                    ModalKind::Edit { id, .. } => Some(*id),
+                    _ => None,
+                } {
+                    match slot {
+                        0 => {
+                            state.duplicate(id);
+                            state.save();
+                        }
+                        1 => {
+                            state.toggle_pin(id);
+                            state.save();
+                        }
+                        _ => {
+                            if state.instances.len() < 2 {
+                                state.flash("The last instance cannot be deleted.".to_string());
+                            } else {
+                                let name = state
+                                    .instance(id)
+                                    .map(|i| i.name.clone())
+                                    .unwrap_or_default();
+                                state.instances.retain(|i| i.id != id);
+                                state.pins.retain(|p| *p != id);
+                                if state.current == id {
+                                    state.current = state.instances.first().map(|i| i.id).unwrap_or(0);
+                                }
+                                state.flash(format!("{name} deleted."));
+                                state.save();
+                            }
+                        }
+                    }
+                    close = true;
+                }
+            }
+        }
+
+        if confirm != self.edit_confirm {
+            self.edit_confirm = confirm;
+        }
+
         self.state = state;
 
         if close {
@@ -416,7 +520,6 @@ fn field_input(ui: &mut Ui, value: &mut String, width: f32, hint: &str, id: Id, 
             let response = ui.add_sized(
                 Vec2::new(width - 24.0, 36.0),
                 egui::TextEdit::singleline(value)
-                    .id(id)
                     .hint_text(egui::RichText::new(hint).color(FAINT).font(regular(13.0)))
                     .font(regular(13.0))
                     .text_color(TEXT)
@@ -424,13 +527,13 @@ fn field_input(ui: &mut Ui, value: &mut String, width: f32, hint: &str, id: Id, 
                     .vertical_align(egui::Align::Center),
             );
             if focus {
-                ui.memory_mut(|m| m.request_focus(id));
-                let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+                response.request_focus();
+                let mut state = egui::TextEdit::load_state(ui.ctx(), response.id).unwrap_or_default();
                 state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
                     egui::text::CCursor::new(0),
                     egui::text::CCursor::new(value.chars().count()),
                 )));
-                egui::TextEdit::store_state(ui.ctx(), id, state);
+                egui::TextEdit::store_state(ui.ctx(), response.id, state);
             }
             let _ = response;
         });
@@ -757,14 +860,15 @@ fn image_body(ui: &mut Ui, assets: &mut Assets, state: &State, id: u64, custom: 
     let columns = 5usize;
     let gap = 8.0;
     let card_w = (width - gap * (columns - 1) as f32) / columns as f32;
+    let cell = 56.0;
     let rows = (state.list.len() + columns - 1) / columns;
     for row in 0..rows {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 62.0), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, cell), Sense::hover());
         for slot in 0..columns {
             let index = row * columns + slot;
             let Some(item) = state.list.get(index) else { break };
             let x = rect.min.x + slot as f32 * (card_w + gap);
-            let card = Rect::from_min_size(Pos2::new(x, rect.min.y), Vec2::new(card_w, 62.0));
+            let card = Rect::from_min_size(Pos2::new(x, rect.min.y), Vec2::new(card_w, cell));
             let poster = item.poster();
             let ctx = ui.ctx().clone();
             let selected = current.as_deref() == Some(poster.as_str());
@@ -806,6 +910,68 @@ fn image_body(ui: &mut Ui, assets: &mut Assets, state: &State, id: u64, custom: 
         Id::new("image-path"),
         false,
     );
+}
+
+/// Name, card image and the three things you can do to an instance.
+fn edit_body(
+    ui: &mut Ui,
+    assets: &mut Assets,
+    state: &State,
+    id: u64,
+    name: &mut String,
+    custom: &mut String,
+    action: &mut Option<u8>,
+    confirm: &mut bool,
+) {
+    // the poster grid is tall, so the whole editor scrolls
+    egui::ScrollArea::vertical()
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .show(ui, |ui| {
+            ui.add_space(6.0);
+            field_label(ui, "NAME");
+            field_input(
+                ui,
+                name,
+                ui.available_width().min(420.0),
+                "Instance name",
+                Id::new("edit-name"),
+                false,
+            );
+            ui.add_space(12.0);
+            image_body(ui, assets, state, id, custom);
+            ui.add_space(14.0);
+            field_label(ui, "ACTIONS");
+            ui.add_space(8.0);
+            let pinned = state.pins.contains(&id);
+            let labels = [
+        "DUPLICATE",
+        if pinned { "UNPIN" } else { "PIN" },
+        if *confirm { "SURE?" } else { "DELETE" },
+    ];
+            let (row, _) =
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
+            let mut x = row.min.x;
+            for (slot, label) in labels.iter().enumerate() {
+                let w = crate::pages::text_width(ui.ctx(), label, &bold(12.0)) + 28.0;
+                let rect = Rect::from_min_size(Pos2::new(x, row.min.y), Vec2::new(w, 34.0));
+                x += w + 8.0;
+                let style = if slot == 2 {
+                    Button::danger(*label).font(bold(11.0))
+                } else {
+                    Button::ghost(*label).font(bold(11.0)).on(slot == 1 && pinned)
+                };
+                if button(ui, ui.id().with("edit-act").with(slot), rect, &style).clicked() {
+                    if slot == 2 && !*confirm {
+                        // deleting an instance is the one thing here that cannot be undone
+                        *confirm = true;
+                    } else {
+                        *confirm = false;
+                        *action = Some(slot as u8);
+                    }
+                }
+            }
+            ui.add_space(10.0);
+        });
 }
 
 fn servers_body(ui: &mut Ui, state: &mut State, id: u64, name: &mut String, address: &mut String) {
@@ -866,6 +1032,7 @@ fn servers_body(ui: &mut Ui, state: &mut State, id: u64, name: &mut String, addr
     let add_id = row.id().with("srv-add");
     if button(&mut row, add_id, add_rect, &Button::primary("ADD").font(bold(12.0))).clicked() {
         let entry = crate::data::Server {
+            enabled: true,
             name: name.trim().to_string(),
             address: address.trim().to_string(),
         };

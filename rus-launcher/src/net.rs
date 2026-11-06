@@ -11,6 +11,27 @@ pub struct Hit {
     pub icon: Option<Vec<u8>>,
     pub downloads: u64,
     pub added: bool,
+    /// Modrinth slug, when the service gives one. Used to look for updates.
+    pub slug: Option<String>,
+    pub version: Option<String>,
+}
+
+/// Asks Modrinth for the newest version of a project.
+pub fn latest_version(slug: &str) -> Result<Option<String>, String> {
+    let url = format!("https://api.modrinth.com/v2/project/{slug}/version");
+    let mut body = get(&url, None)?;
+    let json: serde_json::Value = body
+        .read_json()
+        .map_err(|_| "Modrinth sent something we could not read.".to_string())?;
+    let empty = Vec::new();
+    let versions = json.as_array().unwrap_or(&empty);
+    Ok(versions
+        .iter()
+        .find(|v| v.get("version_type").and_then(|t| t.as_str()) == Some("release"))
+        .or_else(|| versions.first())
+        .and_then(|v| v.get("version_number"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string()))
 }
 
 pub struct Search {
@@ -35,6 +56,80 @@ impl Default for Search {
             busy: false,
             rx: None,
             tx: None,
+        }
+    }
+}
+
+/// Background "is there a newer version?" checks started from the Directory.
+pub struct Updates {
+    pub busy: bool,
+    rx: Option<Receiver<Result<(String, Option<String>), String>>>,
+}
+
+impl Default for Updates {
+    fn default() -> Self {
+        Self {
+            busy: false,
+            rx: None,
+        }
+    }
+}
+
+impl Updates {
+    /// Looks up `slug` and reports back as (entry name, newest version).
+    pub fn check(&mut self, name: &str, slug: &str) {
+        if self.busy {
+            return;
+        }
+        let (tx, rx) = channel();
+        self.rx = Some(rx);
+        self.busy = true;
+        let name = name.to_string();
+        let slug = slug.to_string();
+        std::thread::spawn(move || {
+            let outcome = latest_version(&slug).map(|version| (name, version));
+            let _ = tx.send(outcome);
+        });
+    }
+
+    pub fn poll(&mut self, state: &mut crate::data::State) {
+        if !self.busy {
+            return;
+        }
+        let mut done = None;
+        if let Some(rx) = &self.rx {
+            if let Ok(value) = rx.try_recv() {
+                done = Some(value);
+            }
+        }
+        if let Some(value) = done {
+            self.busy = false;
+            self.rx = None;
+            let instance = state.current_instance_mut();
+            match value {
+                Ok((name, version)) => {
+                    let target = instance
+                        .mods
+                        .iter_mut()
+                        .chain(instance.resourcepacks.iter_mut())
+                        .chain(instance.shaderpacks.iter_mut())
+                        .find(|e| e.name == name);
+                    match (target, version) {
+                        (Some(entry), Some(version)) => {
+                            if entry.version.as_deref() == Some(version.as_str()) {
+                                state.flash(format!("{name} is up to date."));
+                            } else {
+                                entry.version = Some(version.clone());
+                                state.flash(format!("{name} updated to {version}."));
+                            }
+                        }
+                        (Some(_), None) => state.flash(format!("{name} is up to date.")),
+                        (None, _) => {}
+                    }
+                }
+                Err(error) => state.flash(error),
+            }
+            state.save();
         }
     }
 }
@@ -165,6 +260,8 @@ fn run(source: &str, kind: &str, query: &str, loader: &str, cf_key: &str) -> Res
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .into(),
+                slug: item.get("slug").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                version: None,
                 icon_url: item
                     .get("logo")
                     .and_then(|v| v.get("thumbnailUrl"))
@@ -215,6 +312,11 @@ fn run(source: &str, kind: &str, query: &str, loader: &str, cf_key: &str) -> Res
                 icon: None,
                 downloads: hit.get("downloads").and_then(|v| v.as_u64()).unwrap_or(0),
                 added: false,
+                slug: hit.get("slug").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                version: hit
+                    .get("latest_version")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
         for (hit, handle) in out.iter_mut().zip(icons) {

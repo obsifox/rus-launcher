@@ -251,6 +251,15 @@ impl Button {
             spacing: 0.6,
         }
     }
+    /// For destructive actions: outlined in red, never filled.
+    pub fn danger(label: impl Into<String>) -> Self {
+        let mut style = Self::ghost(label);
+        style.text = RED_HI;
+        style.text_hover = Color32::WHITE;
+        style.border = Color32::from_rgb(0x5a, 0x27, 0x2c);
+        style.border_hover = RED;
+        style
+    }
     pub fn filled(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -354,4 +363,25 @@ pub fn button(ui: &mut egui::Ui, id: egui::Id, rect: Rect, style: &Button) -> eg
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     response
+}
+
+/// A small on/off switch, drawn the way the Directory rows need it.
+/// Returns true on the frame it is clicked.
+pub fn switch(ui: &mut egui::Ui, id: egui::Id, rect: Rect, on: bool) -> bool {
+    let response = ui.interact(rect, id, egui::Sense::click());
+    let t = ui
+        .ctx()
+        .animate_bool_with_time(id.with("on"), on, 0.15);
+    let painter = ui.painter();
+    let track = mix(BORDER_HI, RED, t);
+    painter.rect_filled(rect, CornerRadius::same(9), track);
+    let knob = Rect::from_min_size(
+        Pos2::new(rect.min.x + 2.0 + t * (rect.width() - 18.0), rect.min.y + 2.0),
+        Vec2::new(14.0, 14.0),
+    );
+    painter.rect_filled(knob, CornerRadius::same(7), TEXT);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response.clicked()
 }
