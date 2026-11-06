@@ -799,42 +799,6 @@ impl App {
                     }
                 }
 
-                // installed list
-                ui.add_space(18.0);
-                let title = format!("INSTALLED ON {}", instance.name.to_uppercase());
-                field_label(ui, &title);
-                let mods = instance.mods.clone();
-                if mods.is_empty() {
-                    note(ui, "No mods yet.");
-                } else {
-                    for (index, entry) in mods.iter().enumerate() {
-                        let (rect, _) =
-                            ui.allocate_exact_size(Vec2::new(ui.available_width() - 56.0, 44.0), Sense::hover());
-                        let item = Rect::from_min_max(
-                            Pos2::new(rect.min.x + 28.0, rect.min.y),
-                            Pos2::new(rect.max.x - 28.0, rect.min.y + 44.0),
-                        );
-                        ui.painter().rect_filled(item, CornerRadius::same(RADIUS), CARD);
-                        ui.painter().text(
-                            Pos2::new(item.min.x + 12.0, item.center().y),
-                            Align2::LEFT_CENTER,
-                            entry.name.clone(),
-                            regular(13.0),
-                            if entry.enabled { TEXT } else { FAINT },
-                        );
-                        let w = text_width(ui.ctx(), "REMOVE", &bold(11.0)) + 20.0;
-                        let btn = Rect::from_min_size(
-                            Pos2::new(item.max.x - 12.0 - w, item.center().y - 13.0),
-                            Vec2::new(w, 26.0),
-                        );
-                        let style = Button::ghost("REMOVE").font(bold(10.0));
-                        if button(ui, ui.id().with("mod-remove").with(index), btn, &style).clicked() {
-                            self.state.current_instance_mut().mods.remove(index);
-                            self.state.save();
-                        }
-                        ui.add_space(8.0);
-                    }
-                }
                 ui.add_space(28.0);
             });
     }
