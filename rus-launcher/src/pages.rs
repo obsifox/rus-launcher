@@ -198,6 +198,9 @@ impl App {
             }
         }
 
+        // the account card sits in the corner of the hero, on Home only
+        self.home_profile(ui, hero);
+
         // feed
         let feed = Rect::from_min_max(
             Pos2::new(full.min.x, hero.max.y),
@@ -230,6 +233,97 @@ impl App {
             }
         }
         let _ = id;
+    }
+
+    /// The account the player connected: their skin, their nickname, and
+    /// whether TLauncher had a skin for them. Home only.
+    fn home_profile(&mut self, ui: &mut Ui, hero: Rect) {
+        if self.state.settings.skin != "tlauncher" {
+            return;
+        }
+        let ctx = ui.ctx().clone();
+        let known = self.state.settings.account.clone();
+        let typed = self.state.settings.skin_name.trim().to_string();
+        let name = known
+            .clone()
+            .or_else(|| Some(typed.clone()).filter(|value| !value.is_empty()))
+            .unwrap_or_else(|| "Not connected".to_string());
+        let status = if self.skin.is_some() {
+            match self.state.settings.skin_model.as_str() {
+                "slim" => "TLauncher · slim skin".to_string(),
+                _ => "TLauncher · classic skin".to_string(),
+            }
+        } else if self.skins.busy {
+            "Checking TLauncher…".to_string()
+        } else if !typed.is_empty() {
+            "No skin on TLauncher yet".to_string()
+        } else {
+            "Add a nickname in Settings".to_string()
+        };
+        let w = 244.0f32;
+        let h = 66.0f32;
+        let rect = Rect::from_min_size(
+            Pos2::new(hero.max.x - 36.0 - w, hero.min.y + 30.0),
+            Vec2::new(w, h),
+        );
+        let painter = ui.painter();
+        painter.rect_filled(
+            rect,
+            CornerRadius::same(RADIUS),
+            Color32::from_rgba_unmultiplied(0x0e, 0x0e, 0x11, 216),
+        );
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(RADIUS),
+            Stroke::new(1.0, BORDER),
+            egui::StrokeKind::Inside,
+        );
+        let clipped = painter.with_clip_rect(rect);
+        let head = Rect::from_min_size(
+            Pos2::new(rect.min.x + 12.0, rect.center().y - 21.0),
+            Vec2::new(42.0, 42.0),
+        );
+        if let Some(skin) = self.skin.clone() {
+            if let Some(texture) = self.assets.store(&ctx, &skin.url, &skin.bytes) {
+                // the face lives at 8,8 and its hat at 40,8 in every skin
+                let face = Rect::from_min_max(
+                    Pos2::new(8.0 / skin.width as f32, 8.0 / skin.height as f32),
+                    Pos2::new(16.0 / skin.width as f32, 16.0 / skin.height as f32),
+                );
+                let hat = Rect::from_min_max(
+                    Pos2::new(40.0 / skin.width as f32, 8.0 / skin.height as f32),
+                    Pos2::new(48.0 / skin.width as f32, 16.0 / skin.height as f32),
+                );
+                for uv in [face, hat] {
+                    clipped.add(
+                        egui::epaint::RectShape::filled(
+                            head,
+                            CornerRadius::same(2),
+                            Color32::WHITE,
+                        )
+                        .with_texture(texture, uv),
+                    );
+                }
+            }
+        } else {
+            clipped.rect_filled(head, CornerRadius::same(2), CARD);
+            if let Some(texture) = self.assets.id(&ctx, "brand/mark.png") {
+                clipped.add(
+                    egui::epaint::RectShape::filled(
+                        head.shrink(9.0),
+                        CornerRadius::same(2),
+                        Color32::WHITE,
+                    )
+                    .with_texture(texture, uv()),
+                );
+            }
+        }
+        let text_x = head.max.x + 12.0;
+        let room = (rect.max.x - 12.0 - text_x).max(30.0);
+        let who = ellipsize(&ctx, &name, bold(14.0), TEXT, room, 1);
+        clipped.galley(Pos2::new(text_x, rect.center().y - 11.0), who, TEXT);
+        let note = ellipsize(&ctx, &status, regular(11.0), MUTED, room, 1);
+        clipped.galley(Pos2::new(text_x, rect.center().y + 7.0), note, MUTED);
     }
 
     fn news_card(&mut self, ui: &mut Ui, index: usize, rect: Rect) {
@@ -1499,10 +1593,91 @@ impl App {
                 if let Some(source) = picked {
                     self.state.settings.skin = source;
                     self.state.settings.account = None;
+                    self.skin = None;
+                    self.skin_status = String::new();
                     self.state.save();
                 }
 
-                let connect = self.settings_row(ui, width, "Account", |ui, app| {
+                if self.state.settings.skin == "tlauncher" {
+                    let enter = self.settings_row(ui, width, "TLauncher nickname", |ui, app| {
+                        let mut name = app.state.settings.skin_name.clone();
+                        // the row lays its body out right to left: the button
+                        // takes the edge and the field sits beside it
+                        let label = if app.skins.busy { "CHECKING…" } else { "CHECK" };
+                        let w = text_width(ui.ctx(), label, &bold(10.0)) + 24.0;
+                        let (rect, _) =
+                            ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
+                        let field_w = 236.0f32;
+                        let field = Rect::from_min_size(
+                            Pos2::new(
+                                rect.min.x - 12.0 - field_w,
+                                ui.max_rect().center().y - 18.0,
+                            ),
+                            Vec2::new(field_w, 36.0),
+                        );
+                        let response = input(
+                            &mut ui.child_ui(
+                                field,
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                None,
+                            ),
+                            &mut name,
+                            field_w,
+                            "Nickname",
+                        );
+                        if name != app.state.settings.skin_name {
+                            app.state.settings.skin_name = name;
+                            app.state.save();
+                        }
+                        let style = Button::ghost(label).font(bold(10.0));
+                        let go = button(ui, ui.id().with("skin-check"), rect, &style).clicked()
+                            || (response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                        if go {
+                            Some(true)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(true) = enter {
+                        self.check_skin();
+                    }
+
+                    let shown = self.state.settings.skin == "tlauncher";
+                    let status = self.skin_status.clone();
+                    if shown && !status.is_empty() {
+                        self.settings_row(ui, width, "Skin", |ui, app| {
+                            let busy = app.skins.busy;
+                            let colour = if busy || app.skin.is_none() {
+                                MUTED
+                            } else {
+                                crate::theme::GREEN
+                            };
+                            let w = ui.available_width().min(520.0);
+                            let (rect, _) =
+                                ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::hover());
+                            let galley = ui.ctx().fonts(|f| {
+                                f.layout(
+                                    status.clone(),
+                                    regular(13.0),
+                                    colour,
+                                    rect.width(),
+                                )
+                            });
+                            ui.painter().galley(
+                                Pos2::new(rect.min.x, rect.center().y - galley.size().y / 2.0),
+                                galley,
+                                colour,
+                            );
+                            None::<u32>
+                        });
+                    }
+                }
+
+                let connect = if self.state.settings.skin == "tlauncher" {
+                    None
+                } else {
+                    self.settings_row(ui, width, "Account", |ui, app| {
                     let label = match app.state.settings.account.clone() {
                         Some(who) => format!("Connected as {who}"),
                         None => match app.state.settings.skin.as_str() {
@@ -1523,8 +1698,9 @@ impl App {
                     {
                         return Some(true);
                     }
-                    None
-                });
+                        None
+                    })
+                };
                 if let Some(true) = connect {
                     if self.state.settings.account.is_some() {
                         self.state.settings.account = None;

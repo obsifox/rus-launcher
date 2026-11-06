@@ -1,6 +1,8 @@
 use std::io::Read;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
+use image::GenericImageView;
+
 const AGENT: &str = "obsifox-rus-launcher/0.1 (https://github.com/obsifox/rus-launcher)";
 
 #[derive(Clone)]
@@ -751,4 +753,126 @@ fn urlencode(value: &str) -> String {
         }
     }
     out
+}
+
+/* ------------------------------------------------------------------ skins */
+
+/// A skin a player uploaded to TLauncher.
+#[derive(Clone)]
+pub struct Skin {
+    pub url: String,
+    /// "classic" or "slim", the two arm widths TLauncher reports.
+    pub model: String,
+    pub bytes: Vec<u8>,
+    /// Size of the picture as it came in, before the cache scales it.
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Looks a nickname up on TLauncher and downloads whatever skin it finds.
+pub struct Skins {
+    pub busy: bool,
+    rx: Option<Receiver<Result<Option<Skin>, String>>>,
+}
+
+impl Default for Skins {
+    fn default() -> Self {
+        Self {
+            busy: false,
+            rx: None,
+        }
+    }
+}
+
+impl Skins {
+    /// Asks TLauncher what `nickname` is wearing.
+    pub fn check(&mut self, nickname: &str) {
+        if self.busy || nickname.trim().is_empty() {
+            return;
+        }
+        let (tx, rx) = channel();
+        self.rx = Some(rx);
+        self.busy = true;
+        let nickname = nickname.trim().to_string();
+        std::thread::spawn(move || {
+            let _ = tx.send(tlauncher_skin(&nickname));
+        });
+    }
+
+    /// Downloads a skin whose address we already know, after a restart.
+    pub fn load(&mut self, url: &str, model: &str) {
+        if self.busy || url.is_empty() {
+            return;
+        }
+        let (tx, rx) = channel();
+        self.rx = Some(rx);
+        self.busy = true;
+        let url = url.to_string();
+        let model = model.to_string();
+        std::thread::spawn(move || {
+            let _ = tx.send(skin_at(&url, &model));
+        });
+    }
+
+    pub fn poll(&mut self) -> Option<Result<Option<Skin>, String>> {
+        let got = self.rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if got.is_some() {
+            self.rx = None;
+            self.busy = false;
+        }
+        got
+    }
+}
+
+/// TLauncher keeps no public documentation: the launcher itself asks this
+/// address, which answers with the skin a nickname uploaded on the site.
+/// An account without a skin answers with an empty object.
+fn tlauncher_skin(nickname: &str) -> Result<Option<Skin>, String> {
+    let url = format!(
+        "https://auth.tlauncher.org/skin/profile/texture/login/{}",
+        urlencode(nickname)
+    );
+    let mut body = get(&url, None)?;
+    let json: serde_json::Value = body
+        .read_json()
+        .map_err(|_| "TLauncher sent something we could not read.".to_string())?;
+    let Some(entry) = json.get("SKIN") else {
+        return Ok(None);
+    };
+    let mut file = entry
+        .get("url")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if file.is_empty() {
+        return Ok(None);
+    }
+    // the answer comes back as plain http, which some platforms refuse.
+    if let Some(rest) = file.strip_prefix("http://") {
+        file = format!("https://{rest}");
+    }
+    let model = entry
+        .get("metadata")
+        .and_then(|value| value.get("model"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("classic")
+        .to_string();
+    skin_at(&file, &model)
+}
+
+fn skin_at(url: &str, model: &str) -> Result<Option<Skin>, String> {
+    let bytes = bytes(url).ok_or_else(|| "The skin picture would not download.".to_string())?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    let (width, height) = image::load_from_memory(&bytes)
+        .map(|picture| picture.dimensions())
+        .unwrap_or((64, 64));
+    Ok(Some(Skin {
+        url: url.to_string(),
+        model: model.to_string(),
+        bytes,
+        width,
+        height,
+    }))
 }

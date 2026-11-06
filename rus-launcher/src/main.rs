@@ -32,6 +32,10 @@ pub struct App {
     details: net::Details,
     deps: net::Deps,
     icons: net::Icons,
+    skins: net::Skins,
+    /// The skin the player wears, once TLauncher has confirmed it.
+    pub skin: Option<net::Skin>,
+    pub skin_status: String,
     /// Which drawer the running dependency lookup belongs to.
     deps_kind: crate::data::Kind,
     /// True when the running lookup should ask before it installs.
@@ -55,14 +59,18 @@ pub struct App {
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         install_fonts(&cc.egui_ctx);
-        Self {
+        let state = State::new();
+        let mut app = Self {
             assets: Assets::new(),
-            state: State::new(),
+            state,
             search: net::Search::default(),
             updates: net::Updates::default(),
             details: net::Details::default(),
             deps: net::Deps::default(),
             icons: net::Icons::default(),
+            skins: net::Skins::default(),
+            skin: None,
+            skin_status: String::new(),
             deps_kind: crate::data::Kind::Mods,
             deps_ask: false,
             dep_queue: Vec::new(),
@@ -74,7 +82,24 @@ impl App {
             page_since: Instant::now(),
             transient: HashMap::new(),
             anim_until: None,
+        };
+        app.restore_skin();
+        app
+    }
+
+    /// A skin saved by an earlier session is only an address, so the picture
+    /// comes down again in the background while the launcher opens.
+    fn restore_skin(&mut self) {
+        if self.state.settings.skin != "tlauncher" {
+            return;
         }
+        let url = self.state.settings.skin_url.clone();
+        if url.is_empty() {
+            return;
+        }
+        let model = self.state.settings.skin_model.clone();
+        self.skin_status = "Fetching the saved skin…".to_string();
+        self.skins.load(&url, &model);
     }
 
     fn set_page(&mut self, page: Page) {
@@ -308,6 +333,56 @@ impl App {
                     .flash(format!("Could not read the dependencies of {parent}.")),
             }
         }
+
+        // Skins: TLauncher either has one for the nickname or it does not.
+        if let Some(outcome) = self.skins.poll() {
+            match outcome {
+                Ok(Some(skin)) => {
+                    let model = if skin.model == "slim" {
+                        "slim"
+                    } else {
+                        "classic"
+                    };
+                    self.state.settings.skin_url = skin.url.clone();
+                    self.state.settings.skin_model = model.to_string();
+                    let name = self.state.settings.skin_name.trim().to_string();
+                    if !name.is_empty() {
+                        self.state.settings.account = Some(name.clone());
+                    }
+                    self.skin_status = match self.state.settings.account.clone() {
+                        Some(who) => format!("{who} wears a {model} skin from TLauncher."),
+                        None => format!("A {model} skin came down from TLauncher."),
+                    };
+                    self.skin = Some(skin);
+                    self.state.save();
+                }
+                Ok(None) => {
+                    let who = self.state.settings.skin_name.trim().to_string();
+                    self.skin = None;
+                    self.state.settings.account = None;
+                    self.state.settings.skin_url.clear();
+                    self.state.settings.skin_model.clear();
+                    self.skin_status = if who.is_empty() {
+                        "No skin on TLauncher yet.".to_string()
+                    } else {
+                        format!("{who} has not uploaded a skin on TLauncher yet.")
+                    };
+                    self.state.save();
+                }
+                Err(message) => self.skin_status = message,
+            }
+        }
+    }
+
+    /// Asks TLauncher what the typed nickname is wearing.
+    pub fn check_skin(&mut self) {
+        let name = self.state.settings.skin_name.trim().to_string();
+        if name.is_empty() {
+            self.skin_status = "Type the nickname first.".to_string();
+            return;
+        }
+        self.skin_status = format!("Looking {name} up on TLauncher…");
+        self.skins.check(&name);
     }
 
     /// Runs the next waiting dependency lookup, if any.
@@ -365,6 +440,7 @@ impl eframe::App for App {
             || self.updates.busy
             || self.details.busy
             || self.deps.busy
+            || self.skins.busy
             || self.icons.waiting()
             || self.state.flash_text().is_some()
             || animating
