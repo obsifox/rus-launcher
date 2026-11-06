@@ -75,6 +75,9 @@ pub fn latest_version(slug: &str, loader: &str, game_version: &str) -> Result<Op
         .map(|s| s.to_string()))
 }
 
+/// How many results one request asks for.
+pub const PAGE: usize = 20;
+
 pub struct Search {
     pub source: String,
     pub kind: String,
@@ -82,6 +85,10 @@ pub struct Search {
     pub results: Vec<Hit>,
     pub status: String,
     pub busy: bool,
+    /// There is another page to fetch after the one on screen.
+    pub has_more: bool,
+    /// Where the request that is running started reading.
+    pending: usize,
     rx: Option<Receiver<Result<Vec<Hit>, String>>>,
     tx: Option<Sender<Result<Vec<Hit>, String>>>,
 }
@@ -95,6 +102,8 @@ impl Default for Search {
             results: Vec::new(),
             status: String::new(),
             busy: false,
+            has_more: false,
+            pending: 0,
             rx: None,
             tx: None,
         }
@@ -188,12 +197,38 @@ impl Search {
             self.results.clear();
             return;
         }
+        self.results.clear();
+        self.has_more = false;
+        self.page(kind, query, loader, cf_key, 0);
+    }
+
+    /// Fetches the results after the ones already on screen.
+    pub fn next(&mut self, kind: &str, query: &str, loader: &str, cf_key: &str) {
+        if self.busy || !self.has_more {
+            return;
+        }
+        self.page(kind, query, loader, cf_key, self.results.len());
+    }
+
+    fn page(&mut self, kind: &str, query: &str, loader: &str, cf_key: &str, offset: usize) {
+        if self.busy {
+            return;
+        }
+        if self.source == "curseforge" && cf_key.trim().is_empty() {
+            self.status = "CurseForge needs an API key. Add it in Settings → CurseForge API key.".into();
+            self.results.clear();
+            return;
+        }
         let (tx, rx) = channel();
         self.tx = Some(tx.clone());
         self.rx = Some(rx);
         self.busy = true;
-        self.status = "Loading…".into();
-        self.results.clear();
+        self.pending = offset;
+        self.status = if offset == 0 {
+            "Loading…".into()
+        } else {
+            "Loading more…".into()
+        };
 
         let source = self.source.clone();
         let kind = kind.to_string();
@@ -201,7 +236,7 @@ impl Search {
         let loader = loader.to_lowercase();
         let key = cf_key.to_string();
         std::thread::spawn(move || {
-            let outcome = run(&source, &kind, &query, &loader, &key);
+            let outcome = run(&source, &kind, &query, &loader, &key, offset, PAGE);
             let _ = tx.send(outcome);
         });
     }
@@ -222,11 +257,19 @@ impl Search {
             self.tx = None;
             match value {
                 Ok(hits) => {
-                    self.results = hits;
+                    self.has_more = hits.len() >= PAGE;
+                    if self.pending == 0 {
+                        self.results = hits;
+                    } else {
+                        self.results.extend(hits);
+                    }
                     self.status = String::new();
                 }
                 Err(message) => {
-                    self.results.clear();
+                    self.has_more = false;
+                    if self.pending == 0 {
+                        self.results.clear();
+                    }
                     self.status = message;
                 }
             }
@@ -278,7 +321,15 @@ fn bytes(url: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn run(source: &str, kind: &str, query: &str, loader: &str, cf_key: &str) -> Result<Vec<Hit>, String> {
+fn run(
+    source: &str,
+    kind: &str,
+    query: &str,
+    loader: &str,
+    cf_key: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<Vec<Hit>, String> {
     if source == "curseforge" {
         let class = crate::data::CF_CLASS
             .iter()
@@ -286,7 +337,7 @@ fn run(source: &str, kind: &str, query: &str, loader: &str, cf_key: &str) -> Res
             .map(|(_, value)| *value)
             .unwrap_or(6);
         let url = format!(
-            "https://api.curseforge.com/v1/mods/search?gameId=432&classId={class}&searchFilter={}&pageSize=12",
+            "https://api.curseforge.com/v1/mods/search?gameId=432&classId={class}&searchFilter={}&pageSize={limit}&index={offset}",
             urlencode(query)
         );
         let mut body = get(&url, Some(cf_key))?;
@@ -326,7 +377,7 @@ fn run(source: &str, kind: &str, query: &str, loader: &str, cf_key: &str) -> Res
         }
         let encoded = serde_json::to_string(&facets).unwrap_or_default();
         let url = format!(
-            "https://api.modrinth.com/v2/search?query={}&facets={}&limit=12",
+            "https://api.modrinth.com/v2/search?query={}&facets={}&limit={limit}&offset={offset}",
             urlencode(query),
             urlencode(&encoded)
         );

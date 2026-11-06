@@ -173,6 +173,33 @@ pub fn text(
 }
 
 /// Text with a letter-spaced look, drawn the way the web version sets `letter-spacing`.
+/// Lays text out, dropping whole words until it fits `lines` lines of
+/// `width`. Cards are a fixed height, so nothing may spill out of them.
+pub fn ellipsize(
+    ctx: &Context,
+    value: &str,
+    font: FontId,
+    color: Color32,
+    width: f32,
+    lines: usize,
+) -> std::sync::Arc<egui::epaint::Galley> {
+    let mut text = value.trim().to_string();
+    loop {
+        let galley = ctx.fonts(|f| f.layout(text.clone(), font.clone(), color, width));
+        if galley.rows.len() <= lines {
+            return galley;
+        }
+        let shorter = text.trim_end_matches('…').trim_end();
+        match shorter.rfind(' ') {
+            Some(space) => text = format!("{}…", &shorter[..space]),
+            None => {
+                return ctx
+                    .fonts(|f| f.layout("…".to_string(), font.clone(), color, width));
+            }
+        }
+    }
+}
+
 pub fn tracked(
     painter: &Painter,
     pos: Pos2,

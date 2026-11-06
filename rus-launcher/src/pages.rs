@@ -456,22 +456,19 @@ impl App {
         }
         let width = ui.available_width();
         let gap = 12.0;
-        let min = 212.0;
+        let min = 228.0;
         let columns = ((width + gap) / (min + gap)).floor().max(1.0) as usize;
         let card_w = (width - gap * (columns - 1) as f32) / columns as f32;
-        let mut row_height = 0.0f32;
         let rows: Vec<&[u64]> = ids.chunks(columns).collect();
         for chunk in rows {
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 260.0), Sense::hover());
-            row_height = rect.height();
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 242.0), Sense::hover());
             for (slot, id) in chunk.iter().enumerate() {
                 let x = rect.min.x + slot as f32 * (card_w + gap);
-                let card = Rect::from_min_size(Pos2::new(x, rect.min.y), Vec2::new(card_w, 250.0));
+                let card = Rect::from_min_size(Pos2::new(x, rect.min.y), Vec2::new(card_w, 230.0));
                 self.instance_card(ui, *id, card);
             }
             ui.add_space(gap);
         }
-        let _ = row_height;
     }
 
     fn instance_card(&mut self, ui: &mut Ui, id: u64, rect: Rect) {
@@ -496,9 +493,25 @@ impl App {
             CornerRadius::same(RADIUS),
             mix(CARD, CARD_HOVER, t),
         );
-        painter.rect_stroke(rect, CornerRadius::same(RADIUS), Stroke::new(1.0, mix(BORDER, Color32::from_rgb(0x4a, 0x4a, 0x55), t)), egui::StrokeKind::Inside);
+        // A pinned instance wears the accent ring, the open one a lighter edge.
+        let (edge, weight) = if pinned {
+            (RED, 2.0)
+        } else if is_current {
+            (BORDER_HI, 1.0)
+        } else {
+            (
+                mix(BORDER, Color32::from_rgb(0x4a, 0x4a, 0x55), t),
+                1.0,
+            )
+        };
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(RADIUS),
+            Stroke::new(weight, edge),
+            egui::StrokeKind::Inside,
+        );
         let clipped = painter.with_clip_rect(rect);
-        let cover = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 116.0));
+        let cover = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 112.0));
         let ctx = ui.ctx().clone();
         if let Some(texture) = self.assets.id(&ctx, &art) {
             let aspect = self.assets.aspect(&ctx, &art);
@@ -518,17 +531,17 @@ impl App {
         }
 
         let pad_x = 12.0;
-        let mut y = cover.max.y + 10.0;
-        let name_galley = ctx.fonts(|f| {
-            f.layout(
-                instance.name.clone(),
-                bold(14.0),
-                TEXT,
-                rect.width() - pad_x * 2.0,
-            )
-        });
+        let mut y = cover.max.y + 12.0;
+        let name_galley = ellipsize(
+            &ctx,
+            &instance.name,
+            bold(15.0),
+            TEXT,
+            rect.width() - pad_x * 2.0,
+            1,
+        );
         clipped.galley(Pos2::new(rect.min.x + pad_x, y), name_galley, TEXT);
-        y += 17.0 + 5.0;
+        y += 19.0 + 6.0;
         let meta = format!(
             "{}{}",
             instance.version,
@@ -556,11 +569,25 @@ impl App {
                     .with_texture(texture, uv()),
             );
         }
+        y += 18.0;
+        let counts = format!(
+            "{} mods · {} servers · {} packs",
+            instance.mods.len(),
+            instance.servers.len(),
+            instance.resourcepacks.len() + instance.shaderpacks.len()
+        );
+        clipped.text(
+            Pos2::new(rect.min.x + pad_x, y),
+            Align2::LEFT_TOP,
+            counts,
+            regular(11.0),
+            DIM,
+        );
 
         // two wide buttons: everything about editing lives in the Edit popup,
         // and the servers now live in the Directory.
         let labels = ["EDIT", "DIRECTORY"];
-        let row_top = rect.max.y - 12.0 - 28.0;
+        let row_top = rect.max.y - 12.0 - 30.0;
         let bw = (rect.width() - pad_x * 2.0 - 6.0) / 2.0;
         for (slot, label) in labels.iter().enumerate() {
             let btn = Rect::from_min_size(
@@ -568,9 +595,9 @@ impl App {
                     rect.min.x + pad_x + slot as f32 * (bw + 6.0),
                     row_top,
                 ),
-                Vec2::new(bw, 28.0),
+                Vec2::new(bw, 30.0),
             );
-            let style = Button::ghost(*label).font(bold(9.0));
+            let style = Button::ghost(*label).font(bold(10.0));
             let clicked = button(ui, ui.id().with("iact").with(id).with(slot), btn, &style).clicked();
             if clicked {
                 match slot {
@@ -666,10 +693,22 @@ impl App {
         let instance = self.state.current_instance().clone();
         let version = self.state.list[self.state.version(&instance.version)].clone();
         let ctx = ui.ctx().clone();
-
-        egui::ScrollArea::vertical()
-            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-            .show(ui, |ui| {
+        let has_more = self.search.has_more;
+        let busy = self.search.busy;
+        // The footer keeps its place at the bottom of the page, so the button
+        // is always there while the list can still grow.
+        let area = ui.available_rect_before_wrap();
+        let footer_h = if has_more { 56.0 } else { 0.0 };
+        let (scroll_rect, _) = ui.allocate_exact_size(
+            Vec2::new(area.width(), (area.height() - footer_h).max(120.0)),
+            Sense::hover(),
+        );
+        let out = ui
+            .allocate_ui_at_rect(scroll_rect, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("mods-scroll")
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
                 ui.add_space(22.0);
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 11.0), Sense::hover());
                 kicker(
@@ -785,33 +824,85 @@ impl App {
                     ui.add_space(14.0);
                     let width = ui.available_width() - 56.0;
                     let gap = 10.0;
-                    let columns = ((width + gap) / (268.0 + gap)).floor().max(1.0) as usize;
+                    let card_h = 134.0;
+                    let columns = ((width + gap) / (300.0 + gap)).floor().max(1.0) as usize;
                     let card_w = (width - gap * (columns - 1) as f32) / columns as f32;
                     for chunk in hits.chunks(columns) {
                         let (rect, _) =
-                            ui.allocate_exact_size(Vec2::new(width, 116.0), Sense::hover());
+                            ui.allocate_exact_size(Vec2::new(width, card_h), Sense::hover());
                         for (slot, hit) in chunk.iter().enumerate() {
                             let x = rect.min.x + 28.0 + slot as f32 * (card_w + gap);
-                            let card = Rect::from_min_size(Pos2::new(x, rect.min.y), Vec2::new(card_w, 106.0));
+                            let card = Rect::from_min_size(Pos2::new(x, rect.min.y), Vec2::new(card_w, card_h));
                             self.hit_card(ui, card, hit, slot);
                         }
                         ui.add_space(gap);
                     }
                 }
-
                 ui.add_space(28.0);
-            });
+                    })
+            })
+            .inner;
+
+        if has_more {
+            let label = if busy { "LOADING…" } else { "LOAD MORE" };
+            let w = text_width(&ctx, label, &bold(12.0)) + 32.0;
+            let row = Rect::from_min_size(
+                Pos2::new(area.min.x, area.max.y - 38.0),
+                Vec2::new(area.width(), 34.0),
+            );
+            let btn = Rect::from_min_size(
+                Pos2::new(row.center().x - w / 2.0, row.min.y),
+                Vec2::new(w, 34.0),
+            );
+            if button(
+                ui,
+                ui.id().with("load-more"),
+                btn,
+                &Button::ghost(label).font(bold(12.0)),
+            )
+            .clicked()
+                && !busy
+            {
+                self.load_more();
+            }
+        }
+
+        // Reaching the end of the list fetches the next page on its own.
+        let remaining = out.content_size.y - out.inner_rect.height() - out.state.offset.y;
+        if remaining < 120.0 && has_more && !busy {
+            self.load_more();
+        }
     }
 
+    /// One search result. Everything is measured to the card, so a long
+    /// title or description is cut with an ellipsis instead of spilling.
     fn hit_card(&mut self, ui: &mut Ui, rect: Rect, hit: &crate::net::Hit, slot: usize) {
+        let ctx = ui.ctx().clone();
         let painter = ui.painter();
-        painter.rect_filled(rect, CornerRadius::same(RADIUS), CARD);
+        let hovered = ui
+            .interact(
+                rect,
+                ui.id().with("hit").with(slot).with(&hit.title),
+                Sense::hover(),
+            )
+            .hovered();
+        let t = ui.ctx().animate_bool_with_time(
+            ui.id().with("hit-hover").with(slot).with(&hit.title),
+            hovered,
+            0.14,
+        );
+        painter.rect_filled(rect, CornerRadius::same(RADIUS), mix(CARD, CARD_HOVER, t));
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(RADIUS),
+            Stroke::new(1.0, mix(BORDER_SOFT, BORDER_HI, t)),
+            egui::StrokeKind::Inside,
+        );
         let clipped = painter.with_clip_rect(rect);
         let icon_rect = Rect::from_min_size(
-            Pos2::new(rect.min.x + 10.0, rect.min.y + 10.0),
-            Vec2::new(46.0, 46.0),
+            Pos2::new(rect.min.x + 14.0, rect.min.y + 14.0),
+            Vec2::new(52.0, 52.0),
         );
-        let ctx = ui.ctx().clone();
         let key = hit.icon_url.clone().unwrap_or_default();
         let texture = if !key.is_empty() {
             match hit.icon.clone() {
@@ -823,46 +914,54 @@ impl App {
         };
         if let Some(texture) = texture {
             clipped.add(
-                egui::epaint::RectShape::filled(icon_rect, CornerRadius::same(RADIUS), Color32::WHITE)
-                    .with_texture(texture, uv()),
+                egui::epaint::RectShape::filled(
+                    icon_rect,
+                    CornerRadius::same(RADIUS),
+                    Color32::WHITE,
+                )
+                .with_texture(texture, uv()),
             );
         } else {
-            clipped.rect_filled(icon_rect, CornerRadius::same(RADIUS), Color32::from_rgb(0x11, 0x11, 0x11));
+            clipped.rect_filled(
+                icon_rect,
+                CornerRadius::same(RADIUS),
+                Color32::from_rgb(0x11, 0x11, 0x11),
+            );
         }
-        let text_x = icon_rect.max.x + 10.0;
-        let wrap = rect.width() - (text_x - rect.min.x) - 10.0;
-        let title = hit.title.clone();
-        let galley = ctx.fonts(|f| f.layout(title, bold(13.0), TEXT, wrap));
-        clipped.galley(Pos2::new(text_x, icon_rect.min.y), galley, TEXT);
-        let body = if hit.description.chars().count() > 120 {
-            format!("{}…", hit.description.chars().take(120).collect::<String>())
-        } else {
-            hit.description.clone()
-        };
-        let body_galley = ctx.fonts(|f| f.layout(body, regular(12.0), MUTED, wrap));
-        clipped.galley(Pos2::new(text_x, icon_rect.min.y + 20.0), body_galley, MUTED);
-        let downloads = format!("{} downloads", comma(hit.downloads));
+
+        let text_x = icon_rect.max.x + 14.0;
+        let wrap = (rect.max.x - 14.0 - text_x).max(40.0);
+        let title = ellipsize(&ctx, &hit.title, bold(14.0), TEXT, wrap, 1);
+        clipped.galley(Pos2::new(text_x, rect.min.y + 13.0), title, TEXT);
+        let body = ellipsize(&ctx, &hit.description, regular(12.0), MUTED, wrap, 2);
+        clipped.galley(Pos2::new(text_x, rect.min.y + 36.0), body, MUTED);
         clipped.text(
-            Pos2::new(text_x, icon_rect.min.y + 48.0),
-            Align2::LEFT_TOP,
-            downloads,
-            regular(12.0),
+            Pos2::new(text_x, rect.max.y - 14.0),
+            Align2::LEFT_BOTTOM,
+            format!("{} downloads", comma(hit.downloads)),
+            regular(11.0),
             MUTED,
         );
+
         let label = if hit.added { "ADDED" } else { "ADD" };
-        let w = text_width(&ctx, label, &bold(10.0)) + 20.0;
+        let w = text_width(&ctx, label, &bold(11.0)) + 24.0;
         let btn = Rect::from_min_size(
-            Pos2::new(text_x, icon_rect.min.y + 66.0),
+            Pos2::new(rect.max.x - 14.0 - w, rect.max.y - 14.0 - 28.0),
             Vec2::new(w, 28.0),
         );
-        let style = Button::ghost(label).font(bold(10.0)).on(hit.added);
-        if button(ui, ui.id().with("hit-add").with(slot).with(&hit.title), btn, &style).clicked() {
+        if button(
+            ui,
+            ui.id().with("hit-add").with(slot).with(&hit.title),
+            btn,
+            &Button::ghost(label).font(bold(11.0)).on(hit.added),
+        )
+        .clicked()
+        {
             let title = hit.title.clone();
             let description = hit.description.clone();
             let icon = hit.icon_url.clone();
             let slug = hit.slug.clone();
             let source = self.search.source.clone();
-            let version = hit.version.clone();
             let mut added = false;
             {
                 let instance = self.state.current_instance_mut();
@@ -870,7 +969,7 @@ impl App {
                     instance.mods.push(crate::data::Entry {
                         name: title.clone(),
                         slug: slug.clone(),
-                        version,
+                        version: None,
                         enabled: true,
                         source,
                         description: Some(description),
@@ -1555,6 +1654,15 @@ impl App {
         let query = self.search.query.clone();
         let key = self.state.settings.cf_key.clone();
         self.search.start(&kind, &query, &loader, &key);
+    }
+
+    /// Fetches the results that come after the ones already on screen.
+    pub fn load_more(&mut self) {
+        let loader = self.state.current_instance().loader.clone();
+        let kind = self.search.kind.clone();
+        let query = self.search.query.clone();
+        let key = self.state.settings.cf_key.clone();
+        self.search.next(&kind, &query, &loader, &key);
     }
 }
 
