@@ -226,7 +226,9 @@ impl App {
                         }
                         ModalKind::CfKey { .. } => "CurseForge API key".to_string(),
                         ModalKind::Deps { parent, .. } => format!("What {parent} needs"),
-                        ModalKind::Update { tag } => format!("A new launcher · {tag}"),
+                        ModalKind::Update { tag } => {
+                            format!("A new launcher · {}", crate::net::version_label(tag))
+                        }
                     };
                     let header = Rect::from_min_size(rect.min, Vec2::new(width, 51.0));
                     ui.painter().text(
@@ -1234,7 +1236,8 @@ fn update_body(ui: &mut egui::Ui, tag: &str, upgrade: &crate::net::Upgrade, note
     note_text(
         ui,
         &format!(
-            "Version {tag} is on GitHub. This copy is {}.",
+            "Version {} is on GitHub. This copy is {}.",
+            crate::net::version_label(tag),
             env!("CARGO_PKG_VERSION")
         ),
     );

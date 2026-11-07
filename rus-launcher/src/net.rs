@@ -1131,6 +1131,11 @@ fn latest_release() -> Result<Option<Release>, String> {
     }))
 }
 
+/// "v0.4.3" the way people read it: "0.4.3".
+pub fn version_label(tag: &str) -> String {
+    tag.trim_start_matches(['v', 'V']).to_string()
+}
+
 /// "v0.4.3" against the version this build was compiled with.
 pub fn newer(tag: &str, current: &str) -> bool {
     let numbers = |value: &str| -> Vec<u32> {

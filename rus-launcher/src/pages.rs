@@ -1755,7 +1755,9 @@ impl App {
                 // this launcher, and whether GitHub has a newer one
                 let asked = self.settings_row(ui, width, "Launcher", |ui, app| {
                     let note = match app.upgrade_found.clone() {
-                        Some(release) => format!("Version {} is out", release.tag),
+                        Some(release) => {
+                            format!("Version {} is out", crate::net::version_label(&release.tag))
+                        }
                         None => format!("Rus Launcher {}", env!("CARGO_PKG_VERSION")),
                     };
                     let colour = if app.upgrade_found.is_some() {
