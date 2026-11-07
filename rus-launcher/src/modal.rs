@@ -54,6 +54,10 @@ pub enum ModalKind {
         parent: String,
         items: Vec<DepItem>,
     },
+    /// A newer build of the launcher, ready to come down from GitHub.
+    Update {
+        tag: String,
+    },
 }
 
 pub struct ModalHost {
@@ -139,6 +143,12 @@ impl App {
         });
     }
 
+    pub fn open_update(&mut self, release: &crate::net::Release) {
+        self.modal.open(ModalKind::Update {
+            tag: release.tag.clone(),
+        });
+    }
+
     pub fn open_cf_key(&mut self) {
         let key = self.state.settings.cf_key.clone();
         self.modal.open(ModalKind::CfKey { key });
@@ -163,6 +173,8 @@ impl App {
         let mut edit: Option<(u64, String, String)> = None;
         let mut action: Option<u8> = None;
         let mut install: Option<(String, Vec<DepItem>)> = None;
+        let mut update = false;
+        let mut skipped = false;
         let mut confirm = self.edit_confirm;
         let mut state = std::mem::replace(&mut self.state, State::new());
 
@@ -183,6 +195,8 @@ impl App {
                     screen.height().min(790.0)
                 } else if matches!(kind, ModalKind::Deps { .. }) {
                     (screen.height().min(680.0)).min(190.0 + 62.0 * deps_len(&kind) as f32)
+                } else if matches!(kind, ModalKind::Update { .. }) {
+                    screen.height().min(320.0)
                 } else {
                     screen.height().min(680.0)
                 };
@@ -212,6 +226,7 @@ impl App {
                         }
                         ModalKind::CfKey { .. } => "CurseForge API key".to_string(),
                         ModalKind::Deps { parent, .. } => format!("What {parent} needs"),
+                        ModalKind::Update { tag } => format!("A new launcher · {tag}"),
                     };
                     let header = Rect::from_min_size(rect.min, Vec2::new(width, 51.0));
                     ui.painter().text(
@@ -269,6 +284,13 @@ impl App {
                         ModalKind::Servers { .. } => vec![("DONE", true)],
                         ModalKind::Edit { .. } => vec![("CANCEL", false), ("SAVE", true)],
                         ModalKind::Deps { .. } => vec![("SKIP", false), ("INSTALL", true)],
+                        ModalKind::Update { .. } => {
+                            if self.upgrade.busy {
+                                vec![("HIDE", false), ("DOWNLOADING…", true)]
+                            } else {
+                                vec![("LATER", false), ("UPDATE", true)]
+                            }
+                        }
                         _ => vec![("CANCEL", false), ("CREATE", true)],
                     };
                     let picked = footer_buttons(ui, footer, &buttons);
@@ -339,6 +361,9 @@ impl App {
                                     items,
                                 );
                             }
+                            ModalKind::Update { tag } => {
+                                update_body(ui, tag, &self.upgrade, &self.upgrade_note);
+                            }
                             ModalKind::CfKey { key } => {
                                 ui.add_space(6.0);
                                 note_text(ui, "Paste the key from console.curseforge.com. It is kept for this session only.");
@@ -374,6 +399,14 @@ impl App {
                                 } else {
                                     install = Some((parent.clone(), items.clone()));
                                     close = true;
+                                }
+                            }
+                            ModalKind::Update { .. } => {
+                                if index == 0 {
+                                    skipped = true;
+                                    close = true;
+                                } else if !self.upgrade.busy {
+                                    update = true;
                                 }
                             }
                             ModalKind::Servers { .. } => close = true,
@@ -471,6 +504,12 @@ impl App {
 
         if let Some((parent, items)) = install {
             self.install_deps(&parent, &items);
+        }
+        if skipped {
+            self.skip_upgrade();
+        }
+        if update {
+            self.start_upgrade();
         }
         if close {
             self.modal.close();
@@ -1185,5 +1224,49 @@ fn deps_body(
             }
         }
         ui.add_space(8.0);
+    }
+}
+
+/// The release GitHub is offering, and how far the download has got.
+fn update_body(ui: &mut egui::Ui, tag: &str, upgrade: &crate::net::Upgrade, note: &str) {
+    use crate::theme::*;
+    ui.add_space(8.0);
+    note_text(
+        ui,
+        &format!(
+            "Version {tag} is on GitHub. This copy is {}.",
+            env!("CARGO_PKG_VERSION")
+        ),
+    );
+    ui.add_space(6.0);
+    note_text(
+        ui,
+        "Updating replaces this build, opens the new one, and keeps your instances, skins and settings.",
+    );
+    ui.add_space(18.0);
+    if upgrade.busy || upgrade.total > 0 {
+        let done = upgrade.done();
+        let total = upgrade.total.max(1);
+        let share = (done as f32 / total as f32).min(1.0);
+        let wide = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(egui::Vec2::new(wide, 10.0), egui::Sense::hover());
+        ui.painter()
+            .rect_filled(rect, egui::CornerRadius::same(5), BORDER);
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(rect.min, egui::Vec2::new(rect.width() * share, 10.0)),
+            egui::CornerRadius::same(5),
+            RED,
+        );
+        ui.add_space(10.0);
+        note_text(
+            ui,
+            &format!(
+                "{:.1} MB of {:.1} MB",
+                done as f32 / 1_048_576.0,
+                total as f32 / 1_048_576.0
+            ),
+        );
+    } else if !note.is_empty() {
+        note_text(ui, note);
     }
 }

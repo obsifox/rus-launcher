@@ -6,6 +6,7 @@ mod modal;
 mod net;
 mod pages;
 mod skin;
+mod updater;
 mod shell;
 mod theme;
 
@@ -36,6 +37,10 @@ pub struct App {
     deps: net::Deps,
     icons: net::Icons,
     skins: net::Skins,
+    /// Watching GitHub for a newer build of this launcher.
+    upgrade: net::Upgrade,
+    pub upgrade_found: Option<net::Release>,
+    pub upgrade_note: String,
     /// The skin the player wears, once the chosen source has confirmed it.
     pub skin: Option<net::Skin>,
     pub skin_status: String,
@@ -78,6 +83,9 @@ impl App {
             deps: net::Deps::default(),
             icons: net::Icons::default(),
             skins: net::Skins::default(),
+            upgrade: net::Upgrade::default(),
+            upgrade_found: None,
+            upgrade_note: String::new(),
             skin: None,
             skin_status: String::new(),
             skin_server: None,
@@ -97,6 +105,7 @@ impl App {
             anim_until: None,
         };
         app.restore_skin();
+        app.upgrade.check();
         app
     }
 
@@ -546,6 +555,75 @@ impl App {
         out
     }
 
+    /// What GitHub published, and the download that follows it.
+    fn collect_upgrade(&mut self) {
+        if let Some(outcome) = self.upgrade.poll() {
+            match outcome {
+                Ok(Some(release)) => {
+                    let current = env!("CARGO_PKG_VERSION");
+                    let skipped = self.state.settings.skip_version == release.tag;
+                    if release.asset.is_some()
+                        && net::newer(&release.tag, current)
+                        && !skipped
+                    {
+                        self.upgrade_found = Some(release.clone());
+                        self.open_update(&release);
+                    }
+                }
+                // no release, or GitHub could not be asked: nothing to say
+                Ok(None) | Err(_) => {}
+            }
+        }
+        if let Some(outcome) = self.upgrade.poll_file() {
+            match outcome {
+                Ok(path) => self.apply_upgrade(&path),
+                Err(why) => {
+                    self.upgrade_note = why;
+                    self.state.flash("The update did not finish.");
+                }
+            }
+        }
+    }
+
+    /// Starts bringing the release down, if there is somewhere to put it.
+    pub fn start_upgrade(&mut self) {
+        let Some(release) = self.upgrade_found.clone() else {
+            return;
+        };
+        let Some(dir) = State::path() else {
+            self.upgrade_note = "There is nowhere to keep the download.".to_string();
+            return;
+        };
+        if release.asset.is_none() {
+            self.upgrade_note = format!("No build of {} for this machine.", release.tag);
+            return;
+        }
+        self.upgrade_note = String::new();
+        self.upgrade.fetch(&release, &dir);
+    }
+
+    /// The download is on disk: put it where this copy lives and start it.
+    fn apply_upgrade(&mut self, path: &std::path::Path) {
+        match updater::replace_and_relaunch(path) {
+            Ok(()) => {
+                self.state.save();
+                std::process::exit(0);
+            }
+            Err(why) => {
+                self.upgrade_note = why;
+                self.state.flash("The update could not be installed.");
+            }
+        }
+    }
+
+    /// The player said later: do not ask about this release again.
+    pub fn skip_upgrade(&mut self) {
+        if let Some(release) = self.upgrade_found.clone() {
+            self.state.settings.skip_version = release.tag;
+            self.state.save();
+        }
+    }
+
     /// Collects authlib-injector when the download answers.
     fn collect_injector(&mut self) {
         let Some(rx) = self.injector_rx.as_ref() else {
@@ -611,6 +689,7 @@ impl eframe::App for App {
         self.updates.poll(&mut self.state);
         self.apply_lookups();
         self.collect_injector();
+        self.collect_upgrade();
         self.drain_dep_queue();
 
         // Pages fade in, buttons flash their confirmation label and the Modrinth
@@ -625,6 +704,7 @@ impl eframe::App for App {
             || self.deps.busy
             || self.skins.busy
             || self.injector_rx.is_some()
+            || self.upgrade.busy
             || self.icons.waiting()
             || self.state.flash_text().is_some()
             || animating

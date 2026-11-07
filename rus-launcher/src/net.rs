@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 
 use image::GenericImageView;
 
@@ -971,4 +972,215 @@ fn skin_at(url: &str, model: &str, name: &str, uuid: &str) -> Result<Option<Skin
         width,
         height,
     }))
+}
+
+/* ------------------------------------------------------- launcher updates */
+
+/// A release of the launcher itself, the way GitHub publishes it.
+#[derive(Clone)]
+pub struct Release {
+    pub tag: String,
+    pub name: String,
+    pub notes: String,
+    pub asset: Option<Asset>,
+}
+
+/// One file inside a release: the build for this machine.
+#[derive(Clone)]
+pub struct Asset {
+    pub name: String,
+    pub url: String,
+    pub size: u64,
+}
+
+/// Watches GitHub for a newer build of the launcher and brings it down.
+pub struct Upgrade {
+    pub busy: bool,
+    pub total: u64,
+    pub progress: Arc<std::sync::atomic::AtomicU64>,
+    rx: Option<Receiver<Result<Option<Release>, String>>>,
+    file_rx: Option<Receiver<Result<std::path::PathBuf, String>>>,
+}
+
+impl Upgrade {
+    pub fn check(&mut self) {
+        if self.busy {
+            return;
+        }
+        let (tx, rx) = channel();
+        self.rx = Some(rx);
+        self.busy = true;
+        std::thread::spawn(move || {
+            let _ = tx.send(latest_release());
+        });
+    }
+
+    /// Downloads the build for this machine, piece by piece so the window can
+    /// show how far it has got.
+    pub fn fetch(&mut self, release: &Release, dir: &std::path::Path) {
+        let Some(asset) = release.asset.clone() else {
+            return;
+        };
+        if self.busy {
+            return;
+        }
+        let (tx, rx) = channel();
+        self.file_rx = Some(rx);
+        self.busy = true;
+        self.total = asset.size;
+        self.progress.store(0, std::sync::atomic::Ordering::Relaxed);
+        let progress = self.progress.clone();
+        let path = dir.join(&asset.name);
+        std::thread::spawn(move || {
+            let _ = tx.send(download_to(&asset.url, &path, progress));
+        });
+    }
+
+    pub fn poll(&mut self) -> Option<Result<Option<Release>, String>> {
+        let got = self.rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if got.is_some() {
+            self.rx = None;
+            self.busy = false;
+        }
+        got
+    }
+
+    pub fn poll_file(&mut self) -> Option<Result<std::path::PathBuf, String>> {
+        let got = self.file_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if got.is_some() {
+            self.file_rx = None;
+            self.busy = false;
+        }
+        got
+    }
+
+    pub fn done(&self) -> u64 {
+        self.progress.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl Default for Upgrade {
+    fn default() -> Self {
+        Self {
+            busy: false,
+            total: 0,
+            progress: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            rx: None,
+            file_rx: None,
+        }
+    }
+}
+
+/// The file GitHub built for the machine we are running on.
+fn asset_of(release: &serde_json::Value) -> Option<Asset> {
+    let want = if cfg!(windows) {
+        "rus-launcher-windows-x86_64.exe"
+    } else if cfg!(target_os = "macos") {
+        "rus-launcher-macos-aarch64.dmg"
+    } else {
+        "rus-launcher-x86_64.AppImage"
+    };
+    release
+        .get("assets")
+        .and_then(|value| value.as_array())?
+        .iter()
+        .find(|asset| asset.get("name").and_then(|v| v.as_str()) == Some(want))
+        .map(|asset| Asset {
+            name: want.to_string(),
+            url: asset
+                .get("browser_download_url")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            size: asset.get("size").and_then(|value| value.as_u64()).unwrap_or(0),
+        })
+}
+
+fn latest_release() -> Result<Option<Release>, String> {
+    let mut body = get("https://api.github.com/repos/obsifox/rus-launcher/releases/latest", None)?;
+    let json: serde_json::Value = body
+        .read_json()
+        .map_err(|_| "GitHub sent something we could not read.".to_string())?;
+    let tag = json
+        .get("tag_name")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if tag.is_empty() {
+        return Ok(None);
+    }
+    let asset = asset_of(&json);
+    let notes: String = json
+        .get("body")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.starts_with("- ") || line.starts_with("### "))
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(Some(Release {
+        tag,
+        name: json
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        notes,
+        asset,
+    }))
+}
+
+/// "v0.4.3" against the version this build was compiled with.
+pub fn newer(tag: &str, current: &str) -> bool {
+    let numbers = |value: &str| -> Vec<u32> {
+        value
+            .trim_start_matches(|c: char| !c.is_ascii_digit())
+            .split('.')
+            .map(|part| part.trim().parse().unwrap_or(0))
+            .collect()
+    };
+    numbers(tag) > numbers(current)
+}
+
+/// Writes the download to disk instead of holding it in memory. A build is
+/// tens of megabytes, so the usual short deadline does not apply.
+fn download_to(
+    url: &str,
+    path: &std::path::Path,
+    progress: Arc<std::sync::atomic::AtomicU64>,
+) -> Result<std::path::PathBuf, String> {
+    let agent = ureq::config::Config::builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        .timeout_per_read(Some(std::time::Duration::from_secs(60)))
+        .build()
+        .new_agent();
+    let mut body = agent
+        .get(url)
+        .header("User-Agent", AGENT)
+        .call()
+        .map_err(|error| match error {
+            ureq::Error::StatusCode(code) => format!("GitHub answered with {code}."),
+            other => format!("The build could not be downloaded ({other})."),
+        })?
+        .into_body();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut file = std::fs::File::create(path)
+        .map_err(|_| "The download could not be written to disk.".to_string())?;
+    let mut reader = body.as_reader();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|_| "The download broke off.".to_string())?;
+        if read == 0 {
+            break;
+        }
+        std::io::Write::write_all(&mut file, &buffer[..read])
+            .map_err(|_| "The disk ran out of room.".to_string())?;
+        progress.fetch_add(read as u64, std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(path.to_path_buf())
 }

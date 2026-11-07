@@ -303,6 +303,8 @@ pub struct Settings {
     pub account: Option<String>,
     pub cf_key: String,
     pub close_on_play: bool,
+    /// The launcher release the player said "later" to.
+    pub skip_version: String,
 }
 
 impl Default for Settings {
@@ -320,6 +322,7 @@ impl Default for Settings {
             account: None,
             cf_key: String::new(),
             close_on_play: true,
+            skip_version: String::new(),
         }
     }
 }
@@ -619,6 +622,7 @@ impl State {
                 "skin_local": self.settings.skin_local,
                 "account": self.settings.account,
                 "close_on_play": self.settings.close_on_play,
+                "skip_version": self.settings.skip_version,
             },
             "instances": instances,
         });
@@ -763,6 +767,9 @@ impl State {
             }
             if let Some(v) = settings.get("skin_local").and_then(|v| v.as_str()) {
                 self.settings.skin_local = v.to_string();
+            }
+            if let Some(v) = settings.get("skip_version").and_then(|v| v.as_str()) {
+                self.settings.skip_version = v.to_string();
             }
             self.settings.account = settings
                 .get("account")

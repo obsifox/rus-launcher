@@ -1752,6 +1752,60 @@ impl App {
                     }
                 }
 
+                // this launcher, and whether GitHub has a newer one
+                let asked = self.settings_row(ui, width, "Launcher", |ui, app| {
+                    let note = match app.upgrade_found.clone() {
+                        Some(release) => format!("Version {} is out", release.tag),
+                        None => format!("Rus Launcher {}", env!("CARGO_PKG_VERSION")),
+                    };
+                    let colour = if app.upgrade_found.is_some() {
+                        crate::theme::GREEN
+                    } else {
+                        MUTED
+                    };
+                    let w = ui.available_width().min(560.0).max(160.0);
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::hover());
+                    let galley = ui.ctx().fonts(|f| {
+                        f.layout(note.clone(), regular(13.0), colour, rect.width())
+                    });
+                    ui.painter().galley(
+                        Pos2::new(rect.min.x, rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        colour,
+                    );
+                    let label = if app.upgrade.busy {
+                        "CHECKING…"
+                    } else if app.upgrade_found.is_some() {
+                        "UPDATE"
+                    } else {
+                        "CHECK"
+                    };
+                    let w = text_width(ui.ctx(), label, &bold(10.0)) + 24.0;
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::hover());
+                    let style = Button::ghost(label).font(bold(10.0));
+                    if button(ui, ui.id().with("launcher-update"), rect, &style).clicked() {
+                        return Some(true);
+                    }
+                    None
+                });
+                if let Some(true) = asked {
+                    if self.upgrade_found.is_some() {
+                        self.open_update(
+                            &self.upgrade_found.clone().unwrap_or(crate::net::Release {
+                                tag: String::new(),
+                                name: String::new(),
+                                notes: String::new(),
+                                asset: None,
+                            }),
+                        );
+                    } else {
+                        self.upgrade.check();
+                        self.state.flash("Looking for a newer build…");
+                    }
+                }
+
                 let clicked = self.settings_row(ui, width, "CurseForge API key", |ui, app| {
                     let label = if app.state.settings.cf_key.is_empty() {
                         "Not set".to_string()
